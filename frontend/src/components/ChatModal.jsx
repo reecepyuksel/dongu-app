@@ -93,10 +93,15 @@ const ChatModal = ({
       if (data.fromUserId === partnerId) setIsTyping(false);
     });
 
+    socket.on('deleteMessage', ({ messageId }) => {
+      setMessages((prev) => prev.filter((m) => m.id !== messageId));
+    });
+
     return () => {
       socket.off('newMessage');
       socket.off('typing');
       socket.off('stopTyping');
+      socket.off('deleteMessage');
     };
   }, [socket, partnerId, itemId]);
 
@@ -114,6 +119,16 @@ const ChatModal = ({
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
+
+  const handleDeleteMessage = async (msgId) => {
+    setMessages((prev) => prev.filter((m) => m.id !== msgId)); // optimistic
+    try {
+      await api.delete(`/messages/message/${msgId}`);
+    } catch (err) {
+      showToast(err.response?.data?.message || 'Mesaj silinemedi.', 'error');
+      fetchMessages(); // rollback
+    }
+  };
 
   const fetchMessages = async () => {
     try {
@@ -143,6 +158,7 @@ const ChatModal = ({
 
     try {
       setSending(true);
+      setLoading(true);
       if (itemId && itemId !== 'direct') {
         await api.post(`/messages/${itemId}`, {
           content: msgContent,
@@ -166,6 +182,7 @@ const ChatModal = ({
       showToast(err.response?.data?.message || 'Mesaj gönderilemedi.', 'error');
     } finally {
       setSending(false);
+      setLoading(false);
     }
   };
 
@@ -314,8 +331,32 @@ const ChatModal = ({
                   return (
                     <div
                       key={msg.id}
-                      className={`flex ${isSystem ? 'justify-center' : isMine ? 'justify-end' : 'justify-start'}`}
+                      className={`group flex items-end gap-1 ${isSystem ? 'justify-center' : isMine ? 'justify-end' : 'justify-start'}`}
                     >
+                      {isMine && (
+                        <button
+                          onClick={() => handleDeleteMessage(msg.id)}
+                          title="Mesajı sil"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 mb-1 shrink-0"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="w-3.5 h-3.5"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6l-1 14H6L5 6" />
+                            <path d="M10 11v6" />
+                            <path d="M14 11v6" />
+                            <path d="M9 6V4h6v2" />
+                          </svg>
+                        </button>
+                      )}
                       <div
                         className={`max-w-[85%] px-4 py-2.5 rounded-2xl text-sm ${
                           isSystem

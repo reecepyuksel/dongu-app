@@ -8,8 +8,11 @@ import {
   UseGuards,
   Request,
   UseInterceptors,
+  UploadedFile,
   UploadedFiles,
   BadRequestException,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import {
   FileInterceptor,
@@ -85,10 +88,42 @@ export class MessagesController {
 
   // Takas teklifi gönder
   @UseGuards(AuthGuard('jwt'))
+  @Post('trade-offer/upload-photo')
+  @UseInterceptors(FileInterceptor('photo'))
+  async uploadTradeOfferPhoto(@UploadedFile() file: Express.Multer.File) {
+    try {
+      if (!file) {
+        throw new BadRequestException('Yüklenecek fotoğraf bulunamadı.');
+      }
+
+      const result = await this.cloudinaryService.uploadImage(file);
+      const photoUrl = result?.secure_url || null;
+
+      console.log('Trade photo upload result:', {
+        hasFile: !!file,
+        fileName: file?.originalname,
+        photoUrl,
+      });
+
+      if (!photoUrl) {
+        throw new BadRequestException('Cloudinary fotoğraf URL üretemedi.');
+      }
+
+      return { photoUrl };
+    } catch (err) {
+      console.error('Trade photo upload error:', err);
+      throw new BadRequestException(
+        err?.message || 'Fotoğraf yükleme sırasında hata oluştu.',
+      );
+    }
+  }
+
+  // Takas teklifi gönder
+  @UseGuards(AuthGuard('jwt'))
   @Post('trade-offer/send')
   @UseInterceptors(
     FileFieldsInterceptor([
-      { name: 'photo', maxCount: 1 },
+      { name: 'photo', maxCount: 10 },
       { name: 'video', maxCount: 1 },
     ]),
   )
@@ -96,45 +131,103 @@ export class MessagesController {
     @Body('targetItemId') targetItemId: string,
     @Body('offeredItemId') offeredItemId: string,
     @Body('manualOfferText') manualOfferText: string,
+    @Body('photoUrl') photoUrl: string,
+    @Body('photos') photosInput: string[] | string,
     @Request() req,
     @UploadedFiles()
     files?: { photo?: Express.Multer.File[]; video?: Express.Multer.File[] },
   ) {
-    let tradeMediaUrl: string | undefined = undefined;
-    let tradeVideoUrl: string | undefined = undefined;
+    try {
+      let incomingPhotos: string[] = [];
+      if (Array.isArray(photosInput)) {
+        incomingPhotos = photosInput.filter(Boolean);
+      } else if (typeof photosInput === 'string' && photosInput.trim()) {
+        try {
+          const parsed = JSON.parse(photosInput);
+          if (Array.isArray(parsed)) {
+            incomingPhotos = parsed.filter(Boolean);
+          } else {
+            incomingPhotos = [photosInput];
+          }
+        } catch {
+          incomingPhotos = [photosInput];
+        }
+      }
 
-    if (files?.photo?.[0]) {
-      try {
-        const result = await this.cloudinaryService.uploadImage(files.photo[0]);
-        tradeMediaUrl = result.secure_url;
-      } catch (err) {
-        console.error('Error uploading photo for trade offer:', err);
+      console.log("Frontend'den gelen DTO:", {
+        targetItemId,
+        offeredItemId,
+        manualOfferText,
+        photoUrl,
+        photosInput,
+        incomingPhotos,
+        hasPhotoFile: !!files?.photo?.[0],
+        hasVideoFile: !!files?.video?.[0],
+      });
+
+      const uploadedPhotoUrls: string[] = [];
+      let tradeVideoUrl: string | undefined = undefined;
+
+      if (files?.photo?.length) {
+        try {
+          const uploadResults = await Promise.all(
+            files.photo.map((photo) =>
+              this.cloudinaryService.uploadImage(photo),
+            ),
+          );
+          uploadedPhotoUrls.push(
+            ...uploadResults
+              .map((r) => r?.secure_url)
+              .filter((url): url is string => !!url),
+          );
+        } catch (err) {
+          console.error('Error uploading photo for trade offer:', err);
+          throw new BadRequestException(
+            'Görsel yüklenirken bir hata oluştu. Lütfen tekrar deneyin.',
+          );
+        }
+      }
+
+      if (files?.video?.[0]) {
+        try {
+          const result = await this.cloudinaryService.uploadImage(
+            files.video[0],
+          );
+          tradeVideoUrl = result.secure_url;
+        } catch (err) {
+          console.error('Error uploading video for trade offer:', err);
+          throw new BadRequestException(
+            'Video yüklenirken bir hata oluştu. Lütfen tekrar deneyin.',
+          );
+        }
+      }
+
+      const finalPhotoUrls = [
+        ...uploadedPhotoUrls,
+        ...incomingPhotos,
+        ...(photoUrl ? [photoUrl] : []),
+      ].filter(Boolean);
+
+      console.log('Controller final photo list:', finalPhotoUrls);
+
+      if ((photoUrl || incomingPhotos.length) && !finalPhotoUrls.length) {
         throw new BadRequestException(
-          'Görsel yüklenirken bir hata oluştu. Lütfen tekrar deneyin.',
+          'Fotoğraf URL doğrulanamadı. Tekrar deneyin.',
         );
       }
-    }
 
-    if (files?.video?.[0]) {
-      try {
-        const result = await this.cloudinaryService.uploadImage(files.video[0]);
-        tradeVideoUrl = result.secure_url;
-      } catch (err) {
-        console.error('Error uploading video for trade offer:', err);
-        throw new BadRequestException(
-          'Video yüklenirken bir hata oluştu. Lütfen tekrar deneyin.',
-        );
-      }
+      return this.messagesService.sendTradeOffer(
+        targetItemId,
+        req.user.userId,
+        offeredItemId,
+        manualOfferText,
+        finalPhotoUrls,
+        tradeVideoUrl,
+      );
+    } catch (err) {
+      console.error('sendTradeOffer controller error:', err);
+      throw err;
     }
-
-    return this.messagesService.sendTradeOffer(
-      targetItemId,
-      req.user.userId,
-      offeredItemId,
-      manualOfferText,
-      tradeMediaUrl,
-      tradeVideoUrl,
-    );
   }
 
   // Takas teklifine yanıt ver (Kabul/Red)
@@ -230,5 +323,13 @@ export class MessagesController {
       req.user.userId,
       otherUserId,
     );
+  }
+
+  // Tek mesajı sil (soft-delete — sadece gönderen silebilir)
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Delete('message/:id')
+  deleteMessage(@Param('id') messageId: string, @Request() req) {
+    return this.messagesService.deleteMessage(messageId, req.user.userId);
   }
 }

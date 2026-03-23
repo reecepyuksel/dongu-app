@@ -43,7 +43,7 @@ export const ItemCard = ({
       className="group relative bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 border border-slate-100 h-full flex flex-col"
     >
       {/* Image Container */}
-      <div className="relative h-64 overflow-hidden bg-slate-100">
+      <div className="relative h-64 aspect-[4/3] overflow-hidden bg-slate-100">
         {/* Skeleton placeholder */}
         {!imageLoaded && !imageError && (
           <div className="absolute inset-0 animate-pulse bg-slate-200" />

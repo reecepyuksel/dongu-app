@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Inbox,
   MessageCircle,
@@ -12,6 +14,7 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
+import { io } from 'socket.io-client';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -39,13 +42,20 @@ const Trades = () => {
   const [offers, setOffers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState(null);
+  const [lightbox, setLightbox] = useState({
+    open: false,
+    images: [],
+    index: 0,
+    title: '',
+  });
 
   const normalizeOffer = (offer) => ({
     ...offer,
     photoUrl:
+      offer.photos?.[0] ||
       offer.photoUrl ||
-      offer.offeredItem?.imageUrl ||
       offer.tradeMediaUrl ||
+      offer.offeredItem?.imageUrl ||
       null,
     partner: offer.sender?.id === user?.id ? offer.receiver : offer.sender,
   });
@@ -54,7 +64,10 @@ const Trades = () => {
     try {
       if (showLoad) setLoading(true);
       const response = await api.get('/messages/my-trade-offers');
-      setOffers(response.data.map(normalizeOffer));
+      console.log('GET /messages/my-trade-offers sonucu:', response.data);
+      const normalized = response.data.map(normalizeOffer);
+      console.log('Normalize edilmiş teklifler:', normalized);
+      setOffers(normalized);
     } catch (error) {
       console.error('Trade offers could not be loaded', error);
       showToast('Takas teklifleri yüklenemedi.', 'error');
@@ -73,6 +86,36 @@ const Trades = () => {
     }
   }, [authLoading, isAuthenticated, navigate]);
 
+  // Real-time: takas durumu değişince listeyi yenile
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token || !isAuthenticated) return;
+
+    let userId;
+    try {
+      userId = JSON.parse(atob(token.split('.')[1]))?.sub;
+    } catch {
+      return;
+    }
+    if (!userId) return;
+
+    const sock = io(
+      import.meta.env.VITE_API_URL?.replace('/api', '') ||
+        'http://localhost:3005',
+      { query: { userId } },
+    );
+
+    sock.on('newMessage', (msg) => {
+      // Takas teklifi veya takas sohbet mesajı geldiğinde listeyi sessizce yenile
+      if (msg?.isTradeOffer || msg?.tradeOfferId) {
+        fetchOffers(false);
+      }
+    });
+
+    return () => sock.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
+
   const incomingOffers = useMemo(
     () => offers.filter((offer) => offer.receiver?.id === user?.id),
     [offers, user?.id],
@@ -82,6 +125,67 @@ const Trades = () => {
     () => offers.filter((offer) => offer.sender?.id === user?.id),
     [offers, user?.id],
   );
+
+  const closeLightbox = () => {
+    setLightbox({ open: false, images: [], index: 0, title: '' });
+  };
+
+  const openLightbox = (offer, defaultTitle) => {
+    const images = (
+      offer.photos && offer.photos.length > 0 ? offer.photos : [offer.photoUrl]
+    ).filter(Boolean);
+
+    if (!images.length) return;
+
+    setLightbox({
+      open: true,
+      images,
+      index: 0,
+      title: defaultTitle,
+    });
+  };
+
+  const goPrevImage = () => {
+    setLightbox((prev) => {
+      const len = prev.images.length;
+      if (len <= 1) return prev;
+      return { ...prev, index: (prev.index - 1 + len) % len };
+    });
+  };
+
+  const goNextImage = () => {
+    setLightbox((prev) => {
+      const len = prev.images.length;
+      if (len <= 1) return prev;
+      return { ...prev, index: (prev.index + 1) % len };
+    });
+  };
+
+  useEffect(() => {
+    if (!lightbox.open) return;
+
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') {
+        closeLightbox();
+      }
+      if (e.key === 'ArrowLeft') {
+        goPrevImage();
+      }
+      if (e.key === 'ArrowRight') {
+        goNextImage();
+      }
+    };
+
+    window.addEventListener('keydown', handleEsc);
+
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', handleEsc);
+    };
+  }, [lightbox.open]);
 
   const handleTradeResponse = async (offerId, status) => {
     try {
@@ -123,6 +227,7 @@ const Trades = () => {
   );
 
   const renderOfferCard = (offer, type) => {
+    console.log('Render edilen teklif:', offer);
     const status = statusConfig[offer.tradeStatus] || statusConfig.pending;
     const isPendingIncoming =
       type === 'incoming' && offer.tradeStatus === 'pending';
@@ -139,11 +244,21 @@ const Trades = () => {
         <div className="flex items-start gap-4">
           <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
             {offer.photoUrl ? (
-              <img
-                src={offer.photoUrl}
-                alt={offerTitle}
-                className="h-full w-full object-cover"
-              />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openLightbox(offer, offerTitle);
+                }}
+                className="h-full w-full"
+                title="Fotoğrafı büyüt"
+              >
+                <img
+                  src={offer.photoUrl}
+                  alt={offerTitle}
+                  className="h-full w-full object-cover cursor-zoom-in"
+                />
+              </button>
             ) : (
               <div className="flex h-full w-full items-center justify-center text-2xl opacity-60">
                 📦
@@ -325,6 +440,72 @@ const Trades = () => {
             ? renderEmptyState('outgoing')
             : outgoingOffers.map((offer) => renderOfferCard(offer, 'outgoing'))}
       </div>
+
+      <AnimatePresence>
+        {lightbox.open && (
+          <motion.div
+            className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={closeLightbox}
+          >
+            <motion.div
+              className="relative w-full max-w-6xl"
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              transition={{ duration: 0.2 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={closeLightbox}
+                className="absolute -top-3 -right-3 z-10 rounded-full bg-white/95 p-2 text-slate-800 shadow-xl hover:bg-white"
+                title="Kapat"
+              >
+                <X className="h-5 w-5" />
+              </button>
+
+              {lightbox.images.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={goPrevImage}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 z-10 rounded-full bg-white/90 p-2 text-slate-800 shadow-lg hover:bg-white"
+                    title="Önceki fotoğraf"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={goNextImage}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 z-10 rounded-full bg-white/90 p-2 text-slate-800 shadow-lg hover:bg-white"
+                    title="Sonraki fotoğraf"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </button>
+                </>
+              )}
+
+              <div className="rounded-2xl bg-black/30 border border-white/20 p-3">
+                <img
+                  src={lightbox.images[lightbox.index]}
+                  alt={lightbox.title || 'Takas görseli'}
+                  className="w-full max-h-[84vh] object-contain"
+                />
+              </div>
+
+              <div className="mt-3 flex items-center justify-between text-xs text-white/80 px-1">
+                <span className="truncate max-w-[70%]">{lightbox.title}</span>
+                <span>
+                  {lightbox.index + 1} / {lightbox.images.length}
+                </span>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

@@ -62,6 +62,16 @@ const ItemDetail = () => {
   const [publicOffers, setPublicOffers] = useState([]);
   const [loadingOffers, setLoadingOffers] = useState(false);
 
+  // Scroll lock — delete confirm modal
+  useEffect(() => {
+    if (!deleteConfirmOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [deleteConfirmOpen]);
+
   const fetchItem = async () => {
     try {
       const response = await api.get(`/items/${id}`);
@@ -250,7 +260,7 @@ const ItemDetail = () => {
         ];
   const activeImage = itemImages[currentImageIndex] || itemImages[0];
   const tradeOfferCount = publicOffers.length;
-  const tradeOfferLabel = `${tradeOfferCount} kişi takas teklifi verdi`;
+  const tradeOfferLabel = `🔥 ${tradeOfferCount} kişi takas teklifi verdi`;
 
   const isPickupOnly =
     item.deliveryMethods &&
@@ -427,119 +437,112 @@ const ItemDetail = () => {
           animate={{ opacity: 1, x: 0 }}
           className="w-full lg:w-[60%] flex flex-col gap-12"
         >
-          {/* Görseller */}
-          <div className="relative rounded-[16px] p-2 bg-white shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-slate-100/60">
+          {/* Görseller - Trendyol tarzı galeri */}
+          <div className="relative rounded-[16px] bg-white shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-slate-100/60 overflow-hidden">
+            {/* Ana büyük görsel */}
             <div
-              className={`grid gap-2 md:gap-2 ${item.images?.length > 1 ? 'grid-cols-1 md:grid-cols-4 md:grid-rows-2 h-[300px] md:h-[450px] lg:h-[500px]' : 'grid-cols-1 aspect-[4/3] md:aspect-[16/10]'}`}
+              className="relative w-full aspect-[4/3] md:aspect-[16/10] overflow-hidden cursor-pointer group/img"
+              onClick={() => setIsLightboxOpen(true)}
             >
-              {/* Ana Görsel */}
-              <div
-                className={`relative overflow-hidden cursor-pointer group/img ${item.images?.length > 1 ? 'md:col-span-2 md:row-span-2 rounded-[12px]' : 'rounded-[12px]'}`}
-                onClick={() => setIsLightboxOpen(true)}
-              >
-                <img
-                  src={activeImage}
-                  alt={item.title}
-                  className="w-full h-full object-cover transition-transform duration-700 group-hover/img:scale-105"
-                />
-                <div className="absolute inset-0 bg-black/5 opacity-0 group-hover/img:opacity-100 transition-opacity duration-500 pointer-events-none" />
+              <img
+                src={activeImage}
+                alt={item.title}
+                className="w-full h-full object-cover transition-transform duration-700 group-hover/img:scale-105"
+              />
+              <div className="absolute inset-0 bg-black/5 opacity-0 group-hover/img:opacity-100 transition-opacity duration-500 pointer-events-none" />
 
-                {/* Favorite Button */}
+              {/* Favori butonu */}
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleFavoriteToggle();
+                }}
+                className="absolute top-4 right-4 z-30 p-2.5 rounded-full bg-white/90 backdrop-blur-md shadow-md border border-white hover:bg-white hover:scale-110 active:scale-95 transition-all duration-200 group/fav"
+              >
+                <Heart
+                  className={`w-5 h-5 transition-colors duration-300 ${isFavorited ? 'fill-red-500 text-red-500' : 'text-slate-400 group-hover/fav:text-red-400'}`}
+                />
+              </button>
+
+              {/* Sayaç rozeti */}
+              {itemImages.length > 1 && (
+                <div className="absolute bottom-4 right-4 bg-black/55 backdrop-blur-sm text-white text-xs font-bold px-3 py-1.5 rounded-full pointer-events-none">
+                  {currentImageIndex + 1} / {itemImages.length}
+                </div>
+              )}
+
+              {/* Ok butonları */}
+              {itemImages.length > 1 && (
+                <>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentImageIndex((prev) =>
+                        prev === 0 ? itemImages.length - 1 : prev - 1,
+                      );
+                    }}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 p-2 bg-white/75 hover:bg-white backdrop-blur-md rounded-full text-slate-800 transition-all shadow-sm z-20"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentImageIndex((prev) =>
+                        prev === itemImages.length - 1 ? 0 : prev + 1,
+                      );
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-white/75 hover:bg-white backdrop-blur-md rounded-full text-slate-800 transition-all shadow-sm z-20"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </>
+              )}
+
+              {/* Galeriyi Aç Butonu */}
+              {itemImages.length > 1 && (
                 <button
                   onClick={(e) => {
-                    e.preventDefault();
                     e.stopPropagation();
-                    handleFavoriteToggle();
+                    setIsLightboxOpen(true);
                   }}
-                  className="absolute top-4 right-4 z-30 p-2.5 rounded-full bg-white/90 backdrop-blur-md shadow-md border border-white hover:bg-white hover:scale-110 active:scale-95 transition-all duration-200 group/fav"
+                  className="hidden md:flex absolute bottom-4 left-4 bg-white/90 backdrop-blur-md shadow-md border border-slate-200 px-4 py-2 rounded-[10px] font-bold text-slate-700 items-center gap-2 hover:scale-105 active:scale-95 transition-all z-20 text-xs hover:bg-white"
                 >
-                  <Heart
-                    className={`w-5 h-5 transition-colors duration-300 ${isFavorited ? 'fill-red-500 text-red-500' : 'text-slate-400 group-hover/fav:text-red-400'}`}
-                  />
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="opacity-70"
+                  >
+                    <rect x="3" y="3" width="7" height="7" rx="1" />
+                    <rect x="14" y="3" width="7" height="7" rx="1" />
+                    <rect x="14" y="14" width="7" height="7" rx="1" />
+                    <rect x="3" y="14" width="7" height="7" rx="1" />
+                  </svg>
+                  Tüm Görseller
                 </button>
-
-                {/* Mobil Yönlendirmeleri */}
-                {itemImages.length > 1 && (
-                  <div className="md:hidden">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setCurrentImageIndex((prev) =>
-                          prev === 0 ? itemImages.length - 1 : prev - 1,
-                        );
-                      }}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 p-2 bg-white/40 hover:bg-white/70 backdrop-blur-md rounded-full text-slate-800 transition-all shadow-sm"
-                    >
-                      <ChevronLeft className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setCurrentImageIndex((prev) =>
-                          prev === itemImages.length - 1 ? 0 : prev + 1,
-                        );
-                      }}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-white/40 hover:bg-white/70 backdrop-blur-md rounded-full text-slate-800 transition-all shadow-sm"
-                    >
-                      <ChevronRight className="w-5 h-5" />
-                    </button>
-                    <div className="absolute bottom-4 right-4 bg-black/60 backdrop-blur-sm text-white text-xs font-bold px-3 py-1.5 rounded-full">
-                      {currentImageIndex + 1} / {itemImages.length}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Küçük Görseller */}
-              {itemImages.length > 1 &&
-                itemImages.slice(1, 5).map((img, idx) => {
-                  let colSpanClasses = 'md:col-span-1 md:row-span-1';
-                  const total = itemImages.length;
-
-                  if (total === 2)
-                    colSpanClasses = 'md:col-span-2 md:row-span-2';
-                  else if (total === 3)
-                    colSpanClasses = 'md:col-span-2 md:row-span-1';
-                  else if (total === 4) {
-                    if (idx === 0 || idx === 1)
-                      colSpanClasses = 'md:col-span-1 md:row-span-1';
-                    else colSpanClasses = 'md:col-span-2 md:row-span-1'; // Son resim
-                  }
-
-                  const isLastSlot =
-                    (total === 5 && idx === 3) || (total > 5 && idx === 3);
-
-                  return (
-                    <div
-                      key={idx}
-                      className={`hidden md:block relative overflow-hidden rounded-[12px] cursor-pointer group/img ${colSpanClasses}`}
-                      onClick={() => setCurrentImageIndex(idx + 1)}
-                    >
-                      <img
-                        src={img}
-                        alt={`${item.title} ${idx + 2}`}
-                        className="w-full h-full object-cover transition-transform duration-700 group-hover/img:scale-110"
-                      />
-                      <div className="absolute inset-0 bg-black/10 opacity-0 group-hover/img:opacity-100 transition-opacity duration-500 pointer-events-none" />
-
-                      {isLastSlot && total > 5 && (
-                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center text-white font-bold text-2xl backdrop-blur-[2px]">
-                          +{total - 5}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+              )}
             </div>
 
+            {/* Thumbnail strip */}
             {itemImages.length > 1 && (
-              <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+              <div className="flex gap-2 p-3 overflow-x-auto bg-slate-50 border-t border-slate-100">
                 {itemImages.map((img, idx) => (
                   <button
                     key={idx}
                     type="button"
                     onClick={() => setCurrentImageIndex(idx)}
-                    className={`w-16 h-16 md:w-20 md:h-20 rounded-xl overflow-hidden border-2 shrink-0 transition ${currentImageIndex === idx ? 'border-emerald-500' : 'border-slate-200 hover:border-emerald-300'}`}
+                    className={`w-16 h-16 md:w-20 md:h-20 rounded-xl overflow-hidden border-2 shrink-0 transition-all duration-200 ${
+                      currentImageIndex === idx
+                        ? 'border-emerald-500 ring-2 ring-emerald-500/30 scale-105'
+                        : 'border-transparent hover:border-emerald-300 opacity-70 hover:opacity-100'
+                    }`}
                   >
                     <img
                       src={img}
@@ -549,32 +552,6 @@ const ItemDetail = () => {
                   </button>
                 ))}
               </div>
-            )}
-
-            {/* Galeriyi Aç Butonu */}
-            {itemImages.length > 1 && (
-              <button
-                onClick={() => setIsLightboxOpen(true)}
-                className="hidden md:flex absolute bottom-5 right-5 bg-white/95 backdrop-blur-md shadow-[0_4px_20px_rgb(0,0,0,0.1)] border border-slate-200 px-5 py-2.5 rounded-[10px] font-bold text-slate-800 items-center justify-center gap-2 hover:scale-105 active:scale-95 transition-all z-20 hover:bg-white"
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="opacity-70"
-                >
-                  <rect x="3" y="3" width="7" height="7" rx="1" />
-                  <rect x="14" y="3" width="7" height="7" rx="1" />
-                  <rect x="14" y="14" width="7" height="7" rx="1" />
-                  <rect x="3" y="14" width="7" height="7" rx="1" />
-                </svg>
-                Galeriyi Aç
-              </button>
             )}
           </div>
 
@@ -1033,8 +1010,10 @@ const ItemDetail = () => {
           targetItemId={item.id}
           targetItemTitle={item.title}
           onSuccess={() => {
-            fetchItem();
+            // Modal anında kapanır, sayı optimistik artar, arka planda da fetchItem çalışır
             setTradeModalOpen(false);
+            setPublicOffers((prev) => [...prev, { id: 'temp' }]);
+            fetchItem();
           }}
         />
       )}

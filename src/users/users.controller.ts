@@ -24,7 +24,9 @@ export class UsersController {
     if (!user) return null;
     const { password, ...result } = user;
     const karma = await this.usersService.getKarmaScore(req.user.userId);
-    return { ...result, karma };
+    const successfulTradesCount =
+      await this.usersService.getSuccessfulTradesCount(req.user.userId);
+    return { ...result, karma, successfulTradesCount };
   }
 
   // Kullanıcının paylaştığı eşyalar

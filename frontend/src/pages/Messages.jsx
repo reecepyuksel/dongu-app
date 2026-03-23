@@ -106,8 +106,16 @@ const Messages = () => {
       fetchConversations(false);
     });
 
+    // Karşı taraf konuşmayı sildiğinde bizim listeden de kaldır
+    socket.on('conversationDeleted', ({ deletedByUserId }) => {
+      setConversations((prev) =>
+        prev.filter((c) => c.otherUser?.id !== deletedByUserId),
+      );
+    });
+
     return () => {
       socket.off('newMessage');
+      socket.off('conversationDeleted');
     };
   }, [socket]);
 
@@ -134,7 +142,11 @@ const Messages = () => {
 
     try {
       setDeletingId(conv.conversationId);
-      await api.delete(`/messages/${conv.itemId}`);
+      // Liste kişi bazlı olduğu için konuşmayı da kişi bazlı silmeliyiz.
+      if (!conv.otherUser?.id) {
+        throw new Error('Konuşma kullanıcısı bulunamadı.');
+      }
+      await api.delete(`/messages/chat/${conv.otherUser.id}`);
       setConversations((prev) =>
         prev.filter((c) => c.conversationId !== conv.conversationId),
       );

@@ -78,6 +78,24 @@ export class MessagesGateway
     }
   }
 
+  // Notifies the recipient that a single message was deleted (soft-delete)
+  notifyDeleteMessage(toUserId: string, messageId: string) {
+    const targetSocketId = this.connectedUsers.get(toUserId.toString());
+    if (targetSocketId) {
+      this.server.to(targetSocketId).emit('deleteMessage', { messageId });
+    }
+  }
+
+  // Notifies the other participant that an entire conversation was deleted
+  notifyConversationDeleted(toUserId: string, deletedByUserId: string) {
+    const targetSocketId = this.connectedUsers.get(toUserId.toString());
+    if (targetSocketId) {
+      this.server
+        .to(targetSocketId)
+        .emit('conversationDeleted', { deletedByUserId });
+    }
+  }
+
   private getUserIdBySocketId(socketId: string): string | undefined {
     for (const [userId, id] of this.connectedUsers.entries()) {
       if (id === socketId) {

@@ -46,12 +46,19 @@ export class Message {
   @Column({ type: 'varchar', nullable: true })
   tradeMediaUrl: string | null;
 
+  @Column({ type: 'simple-json', nullable: true })
+  tradeMediaUrls: string[] | null;
+
   @Column({ type: 'varchar', nullable: true })
   tradeVideoUrl: string | null;
 
   // If set, this message belongs to a trade-specific chat thread (not general chat)
   @Column({ type: 'varchar', nullable: true })
   tradeOfferId: string | null;
+
+  // Soft-delete flag — silindi işaretlenen mesajlar sorgulara dahil edilmez
+  @Column({ default: false })
+  isDeleted: boolean;
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;

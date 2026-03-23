@@ -8,6 +8,7 @@ import {
   DeliveryStatus,
 } from '../items/entities/item.entity';
 import { Giveaway } from '../giveaways/entities/giveaway.entity';
+import { Message, TradeStatus } from '../messages/entities/message.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import * as bcrypt from 'bcrypt';
 
@@ -20,7 +21,28 @@ export class UsersService {
     private itemsRepository: Repository<Item>,
     @InjectRepository(Giveaway)
     private giveawaysRepository: Repository<Giveaway>,
+    @InjectRepository(Message)
+    private messagesRepository: Repository<Message>,
   ) {}
+
+  async getSuccessfulTradesCount(userId: string): Promise<number> {
+    return this.messagesRepository.count({
+      where: [
+        {
+          sender: { id: userId },
+          isTradeOffer: true,
+          tradeStatus: TradeStatus.ACCEPTED,
+          isDeleted: false,
+        },
+        {
+          receiver: { id: userId },
+          isTradeOffer: true,
+          tradeStatus: TradeStatus.ACCEPTED,
+          isDeleted: false,
+        },
+      ],
+    });
+  }
 
   async create(createUserDto: CreateUserDto): Promise<User> {
     const { email, password, fullName } = createUserDto;
@@ -96,6 +118,8 @@ export class UsersService {
       },
     });
 
+    const successfulTradesCount = await this.getSuccessfulTradesCount(userId);
+
     // Rank belirle (karmaPoint üzerinden)
     let badge = {
       name: 'Yeni Paylaşımcı',
@@ -139,6 +163,7 @@ export class UsersService {
         donatedItems,
         participations,
         deliveredItems,
+        successfulTradesCount,
       },
     };
   }
@@ -180,6 +205,7 @@ export class UsersService {
           : 0; // Eğer hiç söz vermediyse %0 kalsın, ipucu çıksın
 
       const karmaStats = await this.getKarmaScore(userId);
+      const successfulTradesCount = await this.getSuccessfulTradesCount(userId);
 
       return {
         id: user.id,
@@ -193,6 +219,7 @@ export class UsersService {
         receivedItems,
         completionRate,
         karmaStats,
+        successfulTradesCount,
       };
     } catch (error) {
       return null;

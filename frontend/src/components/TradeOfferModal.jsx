@@ -21,8 +21,8 @@ const TradeOfferModal = ({
   const [offerType, setOfferType] = useState('item');
   const [manualOfferText, setManualOfferText] = useState('');
   const [sending, setSending] = useState(false);
-  const [photoFile, setPhotoFile] = useState(null);
-  const [photoPreview, setPhotoPreview] = useState(null);
+  const [photoFiles, setPhotoFiles] = useState([]);
+  const [photoPreviews, setPhotoPreviews] = useState([]);
   const [videoFile, setVideoFile] = useState(null);
   const [videoPreview, setVideoPreview] = useState(null);
 
@@ -30,8 +30,8 @@ const TradeOfferModal = ({
     if (isOpen && user?.id) {
       setOfferType('item');
       setManualOfferText('');
-      setPhotoFile(null);
-      setPhotoPreview(null);
+      setPhotoFiles([]);
+      setPhotoPreviews([]);
       setVideoFile(null);
       setVideoPreview(null);
       setSelectedItemId(null);
@@ -39,12 +39,25 @@ const TradeOfferModal = ({
     }
   }, [isOpen, user]);
 
+  // Scroll lock — modal açıkken arka plan kaymasın
+  useEffect(() => {
+    if (!isOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [isOpen]);
+
   const handlePhotoChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setPhotoFile(file);
-      setPhotoPreview(URL.createObjectURL(file));
-    }
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    setPhotoFiles((prev) => [...prev, ...files]);
+    setPhotoPreviews((prev) => [
+      ...prev,
+      ...files.map((file) => URL.createObjectURL(file)),
+    ]);
   };
 
   const handleVideoChange = (e) => {
@@ -71,6 +84,36 @@ const TradeOfferModal = ({
     }
   };
 
+  const uploadTradePhotos = async () => {
+    if (!photoFiles.length) return [];
+
+    try {
+      const uploadPromises = photoFiles.map(async (file) => {
+        const formData = new FormData();
+        formData.append('photo', file);
+
+        const uploadRes = await api.post(
+          '/messages/trade-offer/upload-photo',
+          formData,
+        );
+        const uploadedUrl = uploadRes?.data?.photoUrl || null;
+
+        if (!uploadedUrl) {
+          throw new Error('Fotoğraf URL alınamadı.');
+        }
+
+        return uploadedUrl;
+      });
+
+      const uploadedUrls = await Promise.all(uploadPromises);
+      console.log('Cloudinary çoklu upload sonucu:', uploadedUrls);
+      return uploadedUrls;
+    } catch (error) {
+      console.error('Fotoğraflar yüklenemedi:', error);
+      throw error;
+    }
+  };
+
   const handleSendOffer = async () => {
     if (offerType === 'item' && !selectedItemId) {
       showToast('Lütfen teklif etmek için bir eşya seçin.', 'info');
@@ -83,44 +126,55 @@ const TradeOfferModal = ({
 
     setSending(true);
     try {
-      let config = {};
-      let payload;
+      let uploadedPhotoUrls = [];
+      if (photoFiles.length) {
+        uploadedPhotoUrls = await uploadTradePhotos();
+      }
 
-      if (photoFile || videoFile) {
-        payload = new FormData();
-        payload.append('targetItemId', targetItemId);
-        if (offerType === 'item') {
-          payload.append('offeredItemId', selectedItemId);
-        } else {
-          payload.append('manualOfferText', manualOfferText);
-        }
-        if (photoFile) payload.append('photo', photoFile);
-        if (videoFile) payload.append('video', videoFile);
-        // NOT: Axios'un FormData'yı algılayıp boundary ekleyebilmesi için Content-Type başlığını manuel ezmiyoruz.
-        config = {};
-      } else {
-        payload = { targetItemId };
-        if (offerType === 'item') {
-          payload.offeredItemId = selectedItemId;
-        } else {
-          payload.manualOfferText = manualOfferText;
-        }
+      if (photoFiles.length && !uploadedPhotoUrls.length) {
+        showToast(
+          'Fotoğraflar yüklenemediği için teklif gönderilemedi.',
+          'error',
+        );
+        return;
+      }
+
+      const payload = {
+        targetItemId,
+        offeredItemId: offerType === 'item' ? selectedItemId : undefined,
+        manualOfferText: offerType === 'text' ? manualOfferText : undefined,
+        photos: uploadedPhotoUrls,
+        photoUrl: uploadedPhotoUrls[0] || undefined,
+      };
+
+      console.log("Backend'e giden veri:", payload);
+
+      let requestPayload = payload;
+      if (videoFile) {
+        const formData = new FormData();
+        formData.append('targetItemId', payload.targetItemId);
+        if (payload.offeredItemId)
+          formData.append('offeredItemId', payload.offeredItemId);
+        if (payload.manualOfferText)
+          formData.append('manualOfferText', payload.manualOfferText);
+        if (payload.photoUrl) formData.append('photoUrl', payload.photoUrl);
+        formData.append('video', videoFile);
+        requestPayload = formData;
       }
 
       const response = await api.post(
-        `/messages/trade-offer/send`,
-        payload,
-        config,
+        '/messages/trade-offer/send',
+        requestPayload,
       );
       showToast('Takas teklifiniz başarıyla gönderildi! 🔄', 'success');
       onSuccess?.(response.data);
       onClose();
     } catch (error) {
       console.error('Error sending trade offer', error);
-      showToast(
-        error.response?.data?.message || 'Takas teklifi gönderilemedi.',
-        'error',
-      );
+      const message = Array.isArray(error.response?.data?.message)
+        ? error.response?.data?.message.join(', ')
+        : error.response?.data?.message;
+      showToast(message || 'Takas teklifi gönderilemedi.', 'error');
     } finally {
       setSending(false);
     }
@@ -280,7 +334,7 @@ const TradeOfferModal = ({
 
                 <div className="mt-4 grid grid-cols-2 gap-4">
                   {/* Photo Upload */}
-                  {!photoPreview ? (
+                  {photoPreviews.length === 0 ? (
                     <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-200 border-dashed rounded-xl cursor-pointer hover:border-emerald-400 hover:bg-emerald-50 transition group">
                       <div className="flex flex-col items-center justify-center text-center px-2">
                         <div className="w-10 h-10 bg-slate-100 group-hover:bg-emerald-100 text-slate-400 group-hover:text-emerald-500 rounded-full flex items-center justify-center mb-2 transition-colors">
@@ -289,41 +343,59 @@ const TradeOfferModal = ({
                         <p className="mb-1 text-sm font-bold text-slate-600">
                           Fotoğraf Yükle
                         </p>
+                        <p className="text-[11px] text-slate-400">
+                          Birden fazla seçebilirsin
+                        </p>
                       </div>
                       <input
                         type="file"
                         className="hidden"
                         accept="image/*"
+                        multiple
                         onChange={handlePhotoChange}
                       />
                     </label>
                   ) : (
-                    <div className="relative w-full h-32 rounded-xl overflow-hidden group border border-slate-200 shadow-sm bg-black">
-                      <img
-                        src={photoPreview}
-                        alt="Fotoğraf Önizleme"
-                        className="w-full h-full object-contain"
-                      />
-                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
-                        <label className="cursor-pointer bg-white text-slate-800 px-3 py-1.5 rounded-xl text-xs font-bold shadow-lg hover:scale-105 transition-transform">
-                          Değiştir
-                          <input
-                            type="file"
-                            className="hidden"
-                            accept="image/*"
-                            onChange={handlePhotoChange}
-                          />
-                        </label>
+                    <div className="w-full">
+                      <div className="grid grid-cols-3 gap-2 mb-2">
+                        {photoPreviews.map((preview, idx) => (
+                          <div
+                            key={preview}
+                            className="relative h-20 rounded-lg overflow-hidden border border-slate-200 bg-black"
+                          >
+                            <img
+                              src={preview}
+                              alt={`Fotoğraf Önizleme ${idx + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                            <button
+                              onClick={() => {
+                                const nextFiles = photoFiles.filter(
+                                  (_, i) => i !== idx,
+                                );
+                                const nextPreviews = photoPreviews.filter(
+                                  (_, i) => i !== idx,
+                                );
+                                setPhotoFiles(nextFiles);
+                                setPhotoPreviews(nextPreviews);
+                              }}
+                              className="absolute top-1 right-1 p-0.5 bg-black/60 text-white rounded-full hover:bg-red-500 transition-colors"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
                       </div>
-                      <button
-                        onClick={() => {
-                          setPhotoFile(null);
-                          setPhotoPreview(null);
-                        }}
-                        className="absolute top-1 right-1 p-1 bg-black/60 text-white rounded-full hover:bg-red-500 transition-colors"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
+                      <label className="cursor-pointer inline-flex items-center gap-2 bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm hover:bg-slate-50">
+                        + Fotoğraf Ekle
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept="image/*"
+                          multiple
+                          onChange={handlePhotoChange}
+                        />
+                      </label>
                     </div>
                   )}
 

@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
+import { io } from 'socket.io-client';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -117,12 +118,44 @@ const TradeDetailPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, isAuthenticated, tradeId]);
 
+  // Real-time: diğer taraf teklifi kabul/reddedince anında güncelle
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token || !isAuthenticated) return;
+
+    let userId;
+    try {
+      userId = JSON.parse(atob(token.split('.')[1]))?.sub;
+    } catch {
+      return;
+    }
+    if (!userId) return;
+
+    const sock = io(
+      import.meta.env.VITE_API_URL?.replace('/api', '') ||
+        'http://localhost:3005',
+      { query: { userId } },
+    );
+
+    sock.on('newMessage', (msg) => {
+      // Bir sistem mesajı bu takasa aitse (kabul/red bildirimi) teklifi yenile
+      if (msg?.tradeOfferId === tradeId && !msg?.sender) {
+        fetchOffer();
+      }
+    });
+
+    return () => sock.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, tradeId]);
+
   // ── Accept / Reject ────────────────────────────────────────────────────────
   const handleResponse = async (status) => {
     if (processing) return;
     try {
       setProcessing(true);
       await api.post(`/messages/trade-offer/${tradeId}/respond`, { status });
+      // Optimistic update — UI'ı anında yansıt, arka planda da fetchOffer çalışır
+      setOffer((prev) => (prev ? { ...prev, tradeStatus: status } : prev));
       showToast(
         status === 'accepted'
           ? '🎉 Takas kabul edildi!'
@@ -144,6 +177,7 @@ const TradeDetailPage = () => {
 
   // The "offered item" photo: prefer tradeMediaUrl, fallback to offeredItem.imageUrl
   const offeredPhotoUrl =
+    offer?.photos?.[0] ||
     offer?.tradeMediaUrl ||
     offer?.offeredItem?.imageUrl ||
     offer?.photoUrl ||
