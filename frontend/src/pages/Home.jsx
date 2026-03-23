@@ -16,18 +16,18 @@ import FilterPanel from '../components/FilterPanel';
 const Home = () => {
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [searchTerm, setSearchTerm] = useState('');
+    const [searchTerm, setSearchTerm] = useState(() => sessionStorage.getItem('home_search_term') || '');
     const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
-    const [activeTab, setActiveTab] = useState('donation'); // 'donation' or 'exchange'
+    const [activeTab, setActiveTab] = useState(() => sessionStorage.getItem('home_active_tab') || 'all'); // 'all', 'donation' or 'exchange'
     
     // Auth & Favorites
     const { isAuthenticated, user } = useAuth();
     const [favoriteIds, setFavoriteIds] = useState([]);
     
     // Active Filters
-    const [activeCategories, setActiveCategories] = useState([]);
-    const [activeCities, setActiveCities] = useState([]);
-    const [activeDistricts, setActiveDistricts] = useState([]);
+    const [activeCategories, setActiveCategories] = useState(() => JSON.parse(sessionStorage.getItem('home_active_categories') || '[]'));
+    const [activeCities, setActiveCities] = useState(() => JSON.parse(sessionStorage.getItem('home_active_cities') || '[]'));
+    const [activeDistricts, setActiveDistricts] = useState(() => JSON.parse(sessionStorage.getItem('home_active_districts') || '[]'));
 
     const { showToast } = useToast();
 
@@ -46,13 +46,37 @@ const Home = () => {
     const cities = citiesData.cities;
     const districtsData = citiesData.districtsData;
 
+    // Senkronize state ile sessionStorage'ı güncelle
+    useEffect(() => {
+        sessionStorage.setItem('home_active_tab', activeTab);
+        sessionStorage.setItem('home_search_term', searchTerm);
+        sessionStorage.setItem('home_active_categories', JSON.stringify(activeCategories));
+        sessionStorage.setItem('home_active_cities', JSON.stringify(activeCities));
+        sessionStorage.setItem('home_active_districts', JSON.stringify(activeDistricts));
+    }, [activeTab, searchTerm, activeCategories, activeCities, activeDistricts]);
+
+    // Scroll restorasyonu için ayrı useEffect
+    useEffect(() => {
+        if (!loading) {
+            const savedScrollPos = sessionStorage.getItem('home_scroll_pos');
+            if (savedScrollPos) {
+                setTimeout(() => {
+                    window.scrollTo({ top: parseInt(savedScrollPos, 10), behavior: 'instant' });
+                    sessionStorage.removeItem('home_scroll_pos');
+                }, 100);
+            }
+        }
+    }, [loading, items]);
+
     useEffect(() => {
         const fetchItems = async () => {
             try {
                 setLoading(true);
-                const queryParams = {
-                    shareType: activeTab
-                };
+                const queryParams = {};
+                // Sadece 'all' DEĞİLSE backend'e shareType gönder.
+                if (activeTab !== 'all') {
+                    queryParams.shareType = activeTab;
+                }
                 if (activeCities.length > 0) queryParams.city = activeCities.join(',');
                 if (activeDistricts.length > 0) queryParams.district = activeDistricts.join(',');
 
@@ -154,6 +178,15 @@ const Home = () => {
         setActiveCities([]);
         setActiveDistricts([]);
         setSearchTerm('');
+        // Ayrıca sessionStorage'dan temizleyelim ki sayfa yenilenince geri gelmesin
+        sessionStorage.removeItem('home_active_categories');
+        sessionStorage.removeItem('home_active_cities');
+        sessionStorage.removeItem('home_active_districts');
+        sessionStorage.removeItem('home_search_term');
+    };
+
+    const handleItemClick = () => {
+        sessionStorage.setItem('home_scroll_pos', window.scrollY.toString());
     };
 
     return (
@@ -348,7 +381,7 @@ const Home = () => {
                         ) : (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-8">
                                 {filteredItems.map(item => (
-                                    <Link to={`/items/${item.id}`} key={item.id} className="group">
+                                    <Link to={`/items/${item.id}`} key={item.id} className="group" onClick={handleItemClick}>
                                         <ItemCard
                                             title={item.title}
                                             imageUrl={(item.images && item.images.length > 0) ? item.images[0] : (item.imageUrl || 'https://via.placeholder.com/300')}

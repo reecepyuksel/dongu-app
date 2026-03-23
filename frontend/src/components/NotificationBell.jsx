@@ -3,6 +3,7 @@ import { Bell, Check, CheckCheck, ExternalLink, Info, Trophy, AlertTriangle } fr
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api';
+import { io } from 'socket.io-client';
 
 const typeStyles = {
     SUCCESS: { icon: Trophy, bg: 'bg-emerald-50', border: 'border-emerald-200', iconColor: 'text-emerald-500', badge: 'bg-emerald-500' },
@@ -18,6 +19,13 @@ export default function NotificationBell() {
     const [loading, setLoading] = useState(false);
     const dropdownRef = useRef(null);
     const navigate = useNavigate();
+
+    const [socket, setSocket] = useState(null);
+
+    // Audio for notification pop
+    // A short, pleasant base64 encoded "pop" sound
+    const popSoundUrl = "data:audio/mpeg;base64,//NExAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqoAAAH+GCAAAAOEwAA4XAACIQAAgQAAAEAAAIgAAACAAA//NExJQAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqoAAAH+GCAAAAOEwAA4XAACIQAAgQAAAEAAAIgAAACAAA";
+    const audioRef = useRef(new Audio(popSoundUrl));
 
     // Poll unread count
     useEffect(() => {
@@ -47,6 +55,58 @@ export default function NotificationBell() {
             // silent
         }
     };
+
+    // Web Sockets for Real-time Notifications & Sounds
+    useEffect(() => {
+        const token = localStorage.getItem('token');
+        if (!token || !isAuthenticated) return;
+        
+        const userId = JSON.parse(atob(token.split('.')[1]))?.sub;
+        if (!userId) return;
+
+        const newSocket = io(import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:3005', {
+            query: { userId }
+        });
+        
+        setSocket(newSocket);
+
+        return () => newSocket.close();
+    }, [isAuthenticated]);
+
+    useEffect(() => {
+        if (!socket) return;
+
+        const playPopSound = () => {
+            try {
+                // To avoid DomException: play() failed because the user didn't interact
+                audioRef.current.currentTime = 0;
+                audioRef.current.play().catch(err => console.log('Audio autoplay prevented by browser', err));
+            } catch(e) {}
+        };
+
+        socket.on('newMessage', (msg) => {
+            // Sadece alıcı bensem bildirim göster/ses çal
+            // (Mesaj gönderme anında da newMessage local'e düşmeyecek çünkü server-side sender'ı atlar, ancak yine de garanti olsun)
+            const token = localStorage.getItem('token');
+            const myId = token ? JSON.parse(atob(token.split('.')[1]))?.sub : null;
+            if (msg.receiver?.id === myId || msg.receiver === myId) {
+                playPopSound();
+                fetchUnreadCount();
+                if (isOpen) fetchNotifications();
+            }
+        });
+
+        socket.on('newNotification', () => {
+             playPopSound();
+             fetchUnreadCount();
+             if (isOpen) fetchNotifications();
+        });
+
+        return () => {
+            socket.off('newMessage');
+            socket.off('newNotification');
+        };
+    }, [socket, isOpen]);
 
     const fetchNotifications = async () => {
         setLoading(true);

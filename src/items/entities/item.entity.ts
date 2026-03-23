@@ -14,6 +14,7 @@ export enum ItemStatus {
   AVAILABLE = 'AVAILABLE',
   DRAW_PENDING = 'DRAW_PENDING',
   GIVEN_AWAY = 'GIVEN_AWAY',
+  IN_TRADE = 'IN_TRADE',
 }
 
 export enum DeliveryStatus {
@@ -112,4 +113,6 @@ export enum DeliveryMethod {
   PICKUP = 'pickup',
   SHIPPING_BUYER = 'shipping_buyer',
   SHIPPING_SELLER = 'shipping_seller',
+  HAND_DELIVERY = 'hand_delivery',
+  MUTUAL_AGREEMENT = 'mutual_agreement',
 }

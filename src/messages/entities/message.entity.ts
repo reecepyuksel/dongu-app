@@ -49,6 +49,10 @@ export class Message {
   @Column({ type: 'varchar', nullable: true })
   tradeVideoUrl: string | null;
 
+  // If set, this message belongs to a trade-specific chat thread (not general chat)
+  @Column({ type: 'varchar', nullable: true })
+  tradeOfferId: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 }

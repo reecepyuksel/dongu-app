@@ -2,11 +2,12 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   Inject,
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Not, IsNull } from 'typeorm';
+import { Repository, Not, IsNull, In } from 'typeorm';
 import { Message, TradeStatus } from './entities/message.entity';
 import { Item, ItemStatus } from '../items/entities/item.entity';
 import { User } from '../users/entities/user.entity';
@@ -46,6 +47,7 @@ export class MessagesService {
 
     let content = '';
     let finalOfferedItemId: string | null = null;
+    let offeredItemImageUrl: string | null = null;
 
     if (offeredItemId) {
       const offeredItem = await this.itemsRepository.findOne({
@@ -64,6 +66,7 @@ export class MessagesService {
         );
       content = `${offeredItem.title} ile takas teklifi`;
       finalOfferedItemId = offeredItem.id;
+      offeredItemImageUrl = offeredItem.imageUrl || null;
     } else if (manualOfferText) {
       content = manualOfferText;
       finalOfferedItemId = null;
@@ -80,7 +83,7 @@ export class MessagesService {
       isTradeOffer: true,
       tradeOfferedItemId: finalOfferedItemId,
       tradeStatus: TradeStatus.PENDING,
-      tradeMediaUrl: tradeMediaUrl || null,
+      tradeMediaUrl: tradeMediaUrl || offeredItemImageUrl,
       tradeVideoUrl: tradeVideoUrl || null,
     });
 
@@ -98,11 +101,14 @@ export class MessagesService {
         '🔄 Yeni Takas Teklifi',
         `${result.sender.fullName} sana bir takas teklifi gönderdi!`,
         NotificationType.INFO,
-        result.item?.id,
+        `${result.item?.id}?chatWith=${result.sender.id}`,
       );
     }
 
-    return result as Message;
+    return {
+      ...(result as Message),
+      photoUrl: result?.tradeMediaUrl || null,
+    } as Message;
   }
 
   async respondToTradeOffer(
@@ -129,6 +135,32 @@ export class MessagesService {
       message.tradeStatus = TradeStatus.REJECTED;
       await this.messagesRepository.save(message);
 
+      // System message for trade chat
+      const rejectedSystem = this.messagesRepository.create({
+        item: message.item ? { id: message.item.id } : null,
+        sender: null,
+        receiver: { id: message.sender!.id },
+        content: '❌ Takas teklifi reddedildi.',
+        isRead: false,
+        isTradeOffer: false,
+        tradeOfferId: message.id,
+      });
+      const savedRejected = await this.messagesRepository.save(rejectedSystem);
+      const hydratedRejected = await this.messagesRepository.findOne({
+        where: { id: savedRejected.id },
+        relations: ['sender', 'receiver', 'item'],
+      });
+      if (hydratedRejected) {
+        this.messagesGateway.notifyNewMessage(message.sender!.id, {
+          ...hydratedRejected,
+          tradeOfferId: message.id,
+        });
+        this.messagesGateway.notifyNewMessage(message.receiver.id, {
+          ...hydratedRejected,
+          tradeOfferId: message.id,
+        });
+      }
+
       await this.notificationsService.createNotification(
         message.sender.id,
         '❌ Takas Teklifi Reddedildi',
@@ -138,8 +170,9 @@ export class MessagesService {
       );
       return message;
     } else if (status === 'accepted') {
-      if (!message.item) throw new BadRequestException('Mesaja ait hedef ilan bulunamadı.');
-      
+      if (!message.item)
+        throw new BadRequestException('Mesaja ait hedef ilan bulunamadı.');
+
       const targetItem = await this.itemsRepository.findOne({
         where: { id: message.item.id },
         relations: ['owner'],
@@ -161,18 +194,20 @@ export class MessagesService {
         if (!offeredItem || offeredItem.status !== ItemStatus.AVAILABLE) {
           message.tradeStatus = TradeStatus.REJECTED;
           await this.messagesRepository.save(message);
-          throw new BadRequestException('Teklif edilen eşya artık uygun değil.');
+          throw new BadRequestException(
+            'Teklif edilen eşya artık uygun değil.',
+          );
         }
       }
 
-      // 1. Hedef eşyayı gönderene ver.
-      targetItem.status = ItemStatus.GIVEN_AWAY;
+      // 1. Hedef eşyayı Takas Sürecine sok ve kazananı işaretle.
+      targetItem.status = ItemStatus.IN_TRADE;
       targetItem.winner = message.sender;
       await this.itemsRepository.save(targetItem);
 
-      // 2. Eğer fiziksel bir eşya sunulduysa onu alıcıya ver.
+      // 2. Eğer fiziksel bir eşya sunulduysa onu da Takas Sürecine sok.
       if (offeredItem) {
-        offeredItem.status = ItemStatus.GIVEN_AWAY;
+        offeredItem.status = ItemStatus.IN_TRADE;
         offeredItem.winner = message.receiver;
         await this.itemsRepository.save(offeredItem);
       }
@@ -183,10 +218,41 @@ export class MessagesService {
       await this.notificationsService.createNotification(
         message.sender.id,
         '🎉 Takas Teklifi Kabul Edildi!',
-        `${message.receiver.fullName}, ${targetItem.title} için yaptığınız teklifi onayladı! Teslimat sürecini başlatabilirsiniz.`,
+        `${message.receiver.fullName}, ${targetItem.title} için yaptığınız teklifi onayladı! Teslimat detaylarını sohbet üzerinden netleştirebilirsiniz.`,
         NotificationType.SUCCESS,
-        targetItem.id,
+        `${targetItem.id}?chatWith=${message.receiver.id}`,
       );
+
+      // Create a system message in the trade chat
+      const systemMessage = this.messagesRepository.create({
+        item: { id: targetItem.id },
+        sender: null,
+        receiver: { id: message.sender.id },
+        content:
+          '🎉 Takas iki tarafça onaylandı. Teslimat detaylarını konuşabilirsiniz.',
+        isRead: false,
+        isTradeOffer: false,
+        tradeOfferId: message.id,
+      });
+      const savedSystemMessage =
+        await this.messagesRepository.save(systemMessage);
+
+      const hydratedSystemMessage = await this.messagesRepository.findOne({
+        where: { id: savedSystemMessage.id },
+        relations: ['sender', 'receiver', 'item'],
+      });
+
+      if (hydratedSystemMessage) {
+        this.messagesGateway.notifyNewMessage(message.sender.id, {
+          ...hydratedSystemMessage,
+          tradeOfferId: message.id,
+        });
+        this.messagesGateway.notifyNewMessage(message.receiver.id, {
+          ...hydratedSystemMessage,
+          tradeOfferId: message.id,
+        });
+      }
+
       return message;
     }
 
@@ -296,8 +362,16 @@ export class MessagesService {
     // Kullanıcı bu ilana ait mesajlarda yer alıyorsa gösterebiliriz
     return this.messagesRepository.find({
       where: [
-        { item: { id: itemId }, sender: { id: userId } },
-        { item: { id: itemId }, receiver: { id: userId } },
+        {
+          item: { id: itemId },
+          sender: { id: userId },
+          tradeOfferId: IsNull(),
+        },
+        {
+          item: { id: itemId },
+          receiver: { id: userId },
+          tradeOfferId: IsNull(),
+        },
       ],
       relations: ['sender', 'receiver'],
       order: { createdAt: 'ASC' },
@@ -311,8 +385,16 @@ export class MessagesService {
   ): Promise<Message[]> {
     return this.messagesRepository.find({
       where: [
-        { sender: { id: currentUserId }, receiver: { id: otherUserId } },
-        { sender: { id: otherUserId }, receiver: { id: currentUserId } },
+        {
+          sender: { id: currentUserId },
+          receiver: { id: otherUserId },
+          tradeOfferId: IsNull(),
+        },
+        {
+          sender: { id: otherUserId },
+          receiver: { id: currentUserId },
+          tradeOfferId: IsNull(),
+        },
       ],
       relations: ['sender', 'receiver', 'item'],
       order: { createdAt: 'ASC' },
@@ -358,6 +440,8 @@ export class MessagesService {
         .leftJoinAndSelect('msg.sender', 'sender')
         .leftJoinAndSelect('msg.receiver', 'receiver')
         .where('sender.id = :userId OR receiver.id = :userId', { userId })
+        .andWhere('msg.isTradeOffer = false')
+        .andWhere('msg.tradeOfferId IS NULL')
         .orderBy('msg.createdAt', 'DESC')
         .getMany();
 
@@ -407,12 +491,160 @@ export class MessagesService {
     }
   }
 
+  // Yeni: Sadece Takas Teklifleri
+  async getMyTradeOffers(userId: string) {
+    try {
+      const messages = await this.messagesRepository
+        .createQueryBuilder('msg')
+        .leftJoinAndSelect('msg.item', 'item')
+        .leftJoinAndSelect('msg.sender', 'sender')
+        .leftJoinAndSelect('msg.receiver', 'receiver')
+        .where('(sender.id = :userId OR receiver.id = :userId)', { userId })
+        .andWhere('msg.isTradeOffer = :isTradeOffer', { isTradeOffer: true })
+        .orderBy('msg.createdAt', 'DESC')
+        .getMany();
+
+      // Mümkün olan asıl Offered Item bilgilerini zenginleştirelim (Frontend'e kolaylık)
+      const enhancedMessages = await Promise.all(
+        messages.map(async (msg) => {
+          let offeredItemData: any = null;
+          if (msg.tradeOfferedItemId) {
+            const offeredItem = await this.itemsRepository.findOne({
+              where: { id: msg.tradeOfferedItemId },
+              relations: ['owner'],
+            });
+            if (offeredItem) {
+              offeredItemData = {
+                id: offeredItem.id,
+                title: offeredItem.title,
+                imageUrl: offeredItem.imageUrl,
+              };
+            }
+          }
+          return {
+            ...msg,
+            photoUrl: msg.tradeMediaUrl || offeredItemData?.imageUrl || null,
+            offeredItem: offeredItemData,
+            otherUser: msg.sender?.id === userId ? msg.receiver : msg.sender,
+          };
+        }),
+      );
+
+      return enhancedMessages;
+    } catch (error) {
+      console.error('Error in getMyTradeOffers:', error);
+      throw error;
+    }
+  }
+
+  // Tek takas teklifi getir
+  async getTradeOffer(tradeOfferId: string, userId: string): Promise<any> {
+    const offer = await this.messagesRepository.findOne({
+      where: { id: tradeOfferId, isTradeOffer: true },
+      relations: ['sender', 'receiver', 'item'],
+    });
+    if (!offer) throw new NotFoundException('Takas teklifi bulunamadı.');
+    if (offer.sender?.id !== userId && offer.receiver?.id !== userId) {
+      throw new ForbiddenException('Bu takasa erişim izniniz yok.');
+    }
+
+    let offeredItemData: any = null;
+    if (offer.tradeOfferedItemId) {
+      const offeredItem = await this.itemsRepository.findOne({
+        where: { id: offer.tradeOfferedItemId },
+        relations: ['owner'],
+      });
+      if (offeredItem) {
+        offeredItemData = {
+          id: offeredItem.id,
+          title: offeredItem.title,
+          imageUrl: offeredItem.imageUrl,
+        };
+      }
+    }
+
+    return {
+      ...offer,
+      photoUrl: offer.tradeMediaUrl || offeredItemData?.imageUrl || null,
+      offeredItem: offeredItemData,
+    };
+  }
+
+  // Takasa özel mesajları getir
+  async getTradeMessages(
+    tradeOfferId: string,
+    userId: string,
+  ): Promise<Message[]> {
+    const offer = await this.messagesRepository.findOne({
+      where: { id: tradeOfferId, isTradeOffer: true },
+      relations: ['sender', 'receiver'],
+    });
+    if (!offer) throw new NotFoundException('Takas teklifi bulunamadı.');
+    if (offer.sender?.id !== userId && offer.receiver?.id !== userId) {
+      throw new ForbiddenException('Bu takasa erişim izniniz yok.');
+    }
+
+    return this.messagesRepository.find({
+      where: { tradeOfferId },
+      relations: ['sender', 'receiver', 'item'],
+      order: { createdAt: 'ASC' },
+    });
+  }
+
+  // Takasa özel mesaj gönder
+  async sendTradeMessage(
+    tradeOfferId: string,
+    senderId: string,
+    content: string,
+  ): Promise<Message> {
+    const offer = await this.messagesRepository.findOne({
+      where: { id: tradeOfferId, isTradeOffer: true },
+      relations: ['sender', 'receiver', 'item'],
+    });
+    if (!offer) throw new NotFoundException('Takas teklifi bulunamadı.');
+    if (offer.sender?.id !== senderId && offer.receiver?.id !== senderId) {
+      throw new ForbiddenException('Bu takasa erişim izniniz yok.');
+    }
+
+    const receiverId =
+      offer.sender?.id === senderId ? offer.receiver?.id : offer.sender?.id;
+
+    if (!receiverId) throw new BadRequestException('Alıcı bulunamadı.');
+
+    const message = this.messagesRepository.create({
+      item: offer.item ? { id: offer.item.id } : null,
+      sender: { id: senderId },
+      receiver: { id: receiverId },
+      content,
+      isRead: false,
+      isTradeOffer: false,
+      tradeOfferId,
+    });
+
+    const saved = await this.messagesRepository.save(message);
+    const result = await this.messagesRepository.findOne({
+      where: { id: saved.id },
+      relations: ['sender', 'receiver', 'item'],
+    });
+
+    if (result?.receiver) {
+      this.messagesGateway.notifyNewMessage(result.receiver.id, {
+        ...result,
+        tradeOfferId,
+      });
+    }
+
+    return result!;
+  }
+
   // Yeni: Toplam okunmamış mesaj sayısı (sistem mesajlarını hariç tut)
   async getUnreadTotal(userId: string): Promise<{ totalUnread: number }> {
     const count = await this.messagesRepository.count({
       where: {
         receiver: { id: userId },
         sender: Not(IsNull()),
+        isTradeOffer: false,
+        tradeOfferId: IsNull(),
         isRead: false,
       },
     });
@@ -423,7 +655,12 @@ export class MessagesService {
   async markAsRead(itemId: string, userId: string): Promise<void> {
     // Bu ilana ait ve alıcının ben olduğu tüm mesajları güncelle
     await this.messagesRepository.update(
-      { item: { id: itemId }, receiver: { id: userId }, isRead: false },
+      {
+        item: { id: itemId },
+        receiver: { id: userId },
+        isRead: false,
+        tradeOfferId: IsNull(),
+      },
       { isRead: true },
     );
   }
@@ -431,7 +668,12 @@ export class MessagesService {
   // Kişi bazlı konuşmayı okundu olarak işaretle
   async markAsReadByChat(userId: string, otherUserId: string): Promise<void> {
     await this.messagesRepository.update(
-      { sender: { id: otherUserId }, receiver: { id: userId }, isRead: false },
+      {
+        sender: { id: otherUserId },
+        receiver: { id: userId },
+        isRead: false,
+        tradeOfferId: IsNull(),
+      },
       { isRead: true },
     );
   }
@@ -446,7 +688,7 @@ export class MessagesService {
       .delete()
       .from(Message)
       .where(
-        '"itemId" = :itemId AND ("senderId" = :userId OR "receiverId" = :userId)',
+        '"itemId" = :itemId AND "tradeOfferId" IS NULL AND ("senderId" = :userId OR "receiverId" = :userId)',
         { itemId, userId },
       )
       .execute();
@@ -464,7 +706,7 @@ export class MessagesService {
       .delete()
       .from(Message)
       .where(
-        '("senderId" = :userId AND "receiverId" = :otherUserId) OR ("senderId" = :otherUserId AND "receiverId" = :userId)',
+        '"tradeOfferId" IS NULL AND (("senderId" = :userId AND "receiverId" = :otherUserId) OR ("senderId" = :otherUserId AND "receiverId" = :userId))',
         { userId, otherUserId },
       )
       .execute();
@@ -473,14 +715,46 @@ export class MessagesService {
   }
 
   // Herkese Açık Takas Teklifleri
-  async getPublicTradeOffers(itemId: string): Promise<Message[]> {
-    return this.messagesRepository.find({
+  async getPublicTradeOffers(itemId: string): Promise<any[]> {
+    const offers = await this.messagesRepository.find({
       where: {
         item: { id: itemId },
         isTradeOffer: true,
       },
       relations: ['sender'], // Only include sender details for public view
       order: { createdAt: 'DESC' },
+    });
+
+    const offeredItemIds = offers
+      .map((offer) => offer.tradeOfferedItemId)
+      .filter((id) => id); // Sadece ID'si olanları al (manual metin tekliflerini atla)
+
+    let itemsMap = new Map<string, Partial<Item>>();
+
+    if (offeredItemIds.length > 0) {
+      const items = await this.itemsRepository.find({
+        where: { id: In(offeredItemIds) },
+        select: ['id', 'title', 'imageUrl', 'images'], // Sadece gizlilik açısından sıkıntısız verileri çek
+      });
+
+      items.forEach((item) => itemsMap.set(item.id, item));
+    }
+
+    // Orijinal teklif öğelerine `offeredItem` bilgisini dışarı sızmayacak/temizlenmiş şekliyle iliştir
+    return offers.map((offer) => {
+      let offeredItem: Partial<Item> | null = null;
+      if (offer.tradeOfferedItemId && itemsMap.has(offer.tradeOfferedItemId)) {
+        offeredItem = itemsMap.get(offer.tradeOfferedItemId) || null;
+      }
+      return {
+        ...offer,
+        photoUrl:
+          offer.tradeMediaUrl ||
+          (offeredItem?.images && offeredItem.images[0]) ||
+          offeredItem?.imageUrl ||
+          null,
+        offeredItem, // Eğer fiziksel eşya teklif edildiyse bu dolacak, değilse null
+      };
     });
   }
 }

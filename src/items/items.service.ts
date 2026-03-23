@@ -5,7 +5,12 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Item, ItemStatus, DeliveryStatus, ShareType } from './entities/item.entity';
+import {
+  Item,
+  ItemStatus,
+  DeliveryStatus,
+  ShareType,
+} from './entities/item.entity';
 import { CreateItemDto } from './dto/create-item.dto';
 import { User } from '../users/entities/user.entity';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -44,6 +49,17 @@ export class ItemsService {
       }
     }
 
+    const methodAliasMap: Record<string, string> = {
+      shipping_buyer: 'shipping',
+      shipping_seller: 'shipping',
+    };
+    const allowedMethods = new Set(['pickup', 'shipping', 'mutual_agreement']);
+    const normalizedMethods = methods
+      .map((method) => methodAliasMap[method] || method)
+      .filter((method) => allowedMethods.has(method));
+    const selectedDeliveryMethod =
+      normalizedMethods.length > 0 ? normalizedMethods[0] : 'mutual_agreement';
+
     const item = this.itemsRepository.create({
       title: createItemDto.title,
       description: createItemDto.description,
@@ -54,7 +70,7 @@ export class ItemsService {
       selectionType: createItemDto.selectionType,
       shareType: createItemDto.shareType,
       tradePreferences: createItemDto.tradePreferences,
-      deliveryMethods: methods,
+      deliveryMethods: [selectedDeliveryMethod],
       imageUrl:
         images.length > 0
           ? images[0]

@@ -9,8 +9,12 @@ import {
   Request,
   UseInterceptors,
   UploadedFiles,
+  BadRequestException,
 } from '@nestjs/common';
-import { FileInterceptor, FileFieldsInterceptor } from '@nestjs/platform-express';
+import {
+  FileInterceptor,
+  FileFieldsInterceptor,
+} from '@nestjs/platform-express';
 import { MessagesService } from './messages.service';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { AuthGuard } from '@nestjs/passport';
@@ -38,6 +42,13 @@ export class MessagesController {
   @Get('my-conversations')
   getMyConversations(@Request() req) {
     return this.messagesService.getMyConversations(req.user.userId);
+  }
+
+  // Takas tekliflerim
+  @UseGuards(AuthGuard('jwt'))
+  @Get('my-trade-offers')
+  getMyTradeOffers(@Request() req) {
+    return this.messagesService.getMyTradeOffers(req.user.userId);
   }
 
   // Direkt mesaj gönder (İlan bağımsız)
@@ -86,17 +97,21 @@ export class MessagesController {
     @Body('offeredItemId') offeredItemId: string,
     @Body('manualOfferText') manualOfferText: string,
     @Request() req,
-    @UploadedFiles() files?: { photo?: Express.Multer.File[]; video?: Express.Multer.File[] },
+    @UploadedFiles()
+    files?: { photo?: Express.Multer.File[]; video?: Express.Multer.File[] },
   ) {
     let tradeMediaUrl: string | undefined = undefined;
     let tradeVideoUrl: string | undefined = undefined;
-    
+
     if (files?.photo?.[0]) {
       try {
         const result = await this.cloudinaryService.uploadImage(files.photo[0]);
         tradeMediaUrl = result.secure_url;
       } catch (err) {
         console.error('Error uploading photo for trade offer:', err);
+        throw new BadRequestException(
+          'Görsel yüklenirken bir hata oluştu. Lütfen tekrar deneyin.',
+        );
       }
     }
 
@@ -106,6 +121,9 @@ export class MessagesController {
         tradeVideoUrl = result.secure_url;
       } catch (err) {
         console.error('Error uploading video for trade offer:', err);
+        throw new BadRequestException(
+          'Video yüklenirken bir hata oluştu. Lütfen tekrar deneyin.',
+        );
       }
     }
 
@@ -131,6 +149,35 @@ export class MessagesController {
       messageId,
       req.user.userId,
       status,
+    );
+  }
+
+  // Tek takas teklifi detayı
+  @UseGuards(AuthGuard('jwt'))
+  @Get('trade-offer/:id')
+  getTradeOffer(@Param('id') id: string, @Request() req) {
+    return this.messagesService.getTradeOffer(id, req.user.userId);
+  }
+
+  // Takasa özel mesajları getir
+  @UseGuards(AuthGuard('jwt'))
+  @Get('trade/:tradeId/messages')
+  getTradeMessages(@Param('tradeId') tradeId: string, @Request() req) {
+    return this.messagesService.getTradeMessages(tradeId, req.user.userId);
+  }
+
+  // Takasa özel mesaj gönder
+  @UseGuards(AuthGuard('jwt'))
+  @Post('trade/:tradeId/message')
+  sendTradeMessage(
+    @Param('tradeId') tradeId: string,
+    @Body('content') content: string,
+    @Request() req,
+  ) {
+    return this.messagesService.sendTradeMessage(
+      tradeId,
+      req.user.userId,
+      content,
     );
   }
 
