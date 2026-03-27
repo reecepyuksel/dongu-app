@@ -158,18 +158,31 @@ export class ItemsService {
     } as Partial<Item>) as Item;
     const savedItem = await this.itemsRepository.save(item);
 
+    const scopeCommunityId = community?.id ?? null;
+
     // --- Smart Matchmaking Logic Start ---
     if (savedItem.postType === ItemPostType.REQUESTING) {
-      // Find matching OFFERING
-      const match = await this.itemsRepository.findOne({
-        where: {
+      // Find matching OFFERING in the same visibility scope
+      const matchQuery = this.itemsRepository
+        .createQueryBuilder('item')
+        .leftJoinAndSelect('item.owner', 'owner')
+        .leftJoinAndSelect('item.community', 'community')
+        .where('item.postType = :postType', {
           postType: ItemPostType.OFFERING,
-          category: savedItem.category,
-          status: ItemStatus.AVAILABLE,
-        },
-        relations: ['owner'],
-        order: { createdAt: 'DESC' },
-      });
+        })
+        .andWhere('item.category = :category', { category: savedItem.category })
+        .andWhere('item.status = :status', { status: ItemStatus.AVAILABLE })
+        .orderBy('item.createdAt', 'DESC');
+
+      if (scopeCommunityId) {
+        matchQuery.andWhere('community.id = :communityId', {
+          communityId: scopeCommunityId,
+        });
+      } else {
+        matchQuery.andWhere('community.id IS NULL');
+      }
+
+      const match = await matchQuery.getOne();
       if (match && match.owner && match.owner.id !== userId) {
         await this.notificationsService.createNotification(
           userId,
@@ -187,16 +200,27 @@ export class ItemsService {
         );
       }
     } else if (savedItem.postType === ItemPostType.OFFERING) {
-      // Find matching REQUESTING
-      const match = await this.itemsRepository.findOne({
-        where: {
+      // Find matching REQUESTING in the same visibility scope
+      const matchQuery = this.itemsRepository
+        .createQueryBuilder('item')
+        .leftJoinAndSelect('item.owner', 'owner')
+        .leftJoinAndSelect('item.community', 'community')
+        .where('item.postType = :postType', {
           postType: ItemPostType.REQUESTING,
-          category: savedItem.category,
-          status: ItemStatus.AVAILABLE,
-        },
-        relations: ['owner'],
-        order: { createdAt: 'DESC' },
-      });
+        })
+        .andWhere('item.category = :category', { category: savedItem.category })
+        .andWhere('item.status = :status', { status: ItemStatus.AVAILABLE })
+        .orderBy('item.createdAt', 'DESC');
+
+      if (scopeCommunityId) {
+        matchQuery.andWhere('community.id = :communityId', {
+          communityId: scopeCommunityId,
+        });
+      } else {
+        matchQuery.andWhere('community.id IS NULL');
+      }
+
+      const match = await matchQuery.getOne();
       if (match && match.owner && match.owner.id !== userId) {
         await this.notificationsService.createNotification(
           match.owner.id,

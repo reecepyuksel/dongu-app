@@ -188,7 +188,10 @@ const Dashboard = () => {
                 Doğrulanmış Döngü Üyesi
               </span>
               {user?.karma?.rank <= 10 && (
-                <span className="inline-flex items-center gap-1 text-xs font-bold text-white bg-gradient-to-r from-amber-400 to-amber-500 px-3 py-1.5 rounded-full shadow-sm" title="İlk 10'da yer alıyor!">
+                <span
+                  className="inline-flex items-center gap-1 text-xs font-bold text-white bg-gradient-to-r from-amber-400 to-amber-500 px-3 py-1.5 rounded-full shadow-sm"
+                  title="İlk 10'da yer alıyor!"
+                >
                   <Trophy className="w-3 h-3" /> Topluluk Lideri
                 </span>
               )}
@@ -196,13 +199,14 @@ const Dashboard = () => {
           </div>
         </div>
 
-                {/* Karma & Impact Card — Minimalist Redesign */}
+        {/* Karma & Impact Card — Minimalist Redesign */}
         <div className="lg:col-span-2 relative bg-white rounded-3xl p-6 md:p-8 shadow-lg overflow-visible">
           <div className="relative z-10 flex flex-col md:flex-row gap-8 h-full">
-
             {/* Sol: Gelişim Paneli */}
             <div className="flex-1 flex flex-col justify-center">
-              <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-6 -mt-2">Döngü İstatistiklerin</p>
+              <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-6 -mt-2">
+                Döngü İstatistiklerin
+              </p>
               {/* Puan + Sıralama */}
               <div className="flex items-center gap-4 mb-4">
                 <motion.span
@@ -215,24 +219,60 @@ const Dashboard = () => {
                 </motion.span>
                 <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-full">
                   <Trophy className="w-4 h-4 text-amber-500" />
-                  <span className="text-sm font-bold text-amber-700">#{user?.karma?.rank || '-'}</span>
+                  <span className="text-sm font-bold text-amber-700">
+                    #{user?.karma?.rank || '-'}
+                  </span>
                 </div>
               </div>
 
               {/* Progress Bar — ince ve modern */}
               {(() => {
                 const kp = user?.karmaPoint || 0;
-                let badgeName = 'Yeni Paylaşımcı', badgeEmoji = '🥉', badgeColor = 'bg-amber-50 text-amber-700 border-amber-200';
-                let nextName = 'İyilik Yolcusu', pointsLeft = 251 - kp;
-                if (kp > 2000) { badgeName = 'Döngü Ustası'; badgeEmoji = '💎'; badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-200'; nextName = null; pointsLeft = 0; }
-                else if (kp >= 751) { badgeName = 'İyilik Elçisi'; badgeEmoji = '🥇'; badgeColor = 'bg-yellow-50 text-yellow-700 border-yellow-200'; nextName = 'Döngü Ustası'; pointsLeft = 2001 - kp; }
-                else if (kp >= 251) { badgeName = 'İyilik Yolcusu'; badgeEmoji = '🥈'; badgeColor = 'bg-slate-50 text-slate-600 border-slate-200'; nextName = 'İyilik Elçisi'; pointsLeft = 751 - kp; }
+                let badgeName = 'Yeni Paylaşımcı',
+                  badgeEmoji = '🥉',
+                  badgeColor = 'bg-amber-50 text-amber-700 border-amber-200';
+                let nextName = 'İyilik Yolcusu',
+                  pointsLeft = 251 - kp;
+                if (kp > 2000) {
+                  badgeName = 'Döngü Ustası';
+                  badgeEmoji = '💎';
+                  badgeColor =
+                    'bg-emerald-50 text-emerald-700 border-emerald-200';
+                  nextName = null;
+                  pointsLeft = 0;
+                } else if (kp >= 751) {
+                  badgeName = 'İyilik Elçisi';
+                  badgeEmoji = '🥇';
+                  badgeColor = 'bg-yellow-50 text-yellow-700 border-yellow-200';
+                  nextName = 'Döngü Ustası';
+                  pointsLeft = 2001 - kp;
+                } else if (kp >= 251) {
+                  badgeName = 'İyilik Yolcusu';
+                  badgeEmoji = '🥈';
+                  badgeColor = 'bg-slate-50 text-slate-600 border-slate-200';
+                  nextName = 'İyilik Elçisi';
+                  pointsLeft = 751 - kp;
+                }
 
-                let currentMin = 0, currentMax = 250;
-                if (kp >= 2000) { currentMin = 2000; currentMax = 2000; }
-                else if (kp >= 751) { currentMin = 751; currentMax = 2000; }
-                else if (kp >= 251) { currentMin = 251; currentMax = 750; }
-                const pct = kp >= 2000 ? 100 : Math.min(((kp - currentMin) / (currentMax - currentMin)) * 100, 100);
+                let currentMin = 0,
+                  currentMax = 250;
+                if (kp >= 2000) {
+                  currentMin = 2000;
+                  currentMax = 2000;
+                } else if (kp >= 751) {
+                  currentMin = 751;
+                  currentMax = 2000;
+                } else if (kp >= 251) {
+                  currentMin = 251;
+                  currentMax = 750;
+                }
+                const pct =
+                  kp >= 2000
+                    ? 100
+                    : Math.min(
+                        ((kp - currentMin) / (currentMax - currentMin)) * 100,
+                        100,
+                      );
 
                 return (
                   <>
@@ -240,19 +280,35 @@ const Dashboard = () => {
                       <motion.div
                         initial={{ width: 0 }}
                         animate={{ width: `${pct}%` }}
-                        transition={{ duration: 1.5, ease: 'easeOut', delay: 0.3 }}
+                        transition={{
+                          duration: 1.5,
+                          ease: 'easeOut',
+                          delay: 0.3,
+                        }}
                         className={`h-full rounded-full ${
-                          kp < 251 ? 'bg-amber-400' : kp < 751 ? 'bg-slate-400' : kp < 2000 ? 'bg-yellow-400' : 'bg-emerald-500'
+                          kp < 251
+                            ? 'bg-amber-400'
+                            : kp < 751
+                              ? 'bg-slate-400'
+                              : kp < 2000
+                                ? 'bg-yellow-400'
+                                : 'bg-emerald-500'
                         }`}
                       />
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold border ${badgeColor}`}>
+                      <span
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold border ${badgeColor}`}
+                      >
                         {badgeEmoji} {badgeName}
                       </span>
                       {nextName && (
                         <span className="text-xs text-slate-400 font-medium">
-                          {nextName}'e <span className="text-emerald-600 font-bold">{pointsLeft}</span> puan
+                          {nextName}'e{' '}
+                          <span className="text-emerald-600 font-bold">
+                            {pointsLeft}
+                          </span>{' '}
+                          puan
                         </span>
                       )}
                     </div>
@@ -266,23 +322,39 @@ const Dashboard = () => {
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <div className="bg-gray-50 rounded-xl p-3 flex flex-col items-center text-center">
                   <Package className="w-5 h-5 text-blue-500 mb-1.5" />
-                  <span className="text-xl font-bold text-slate-800">{myItems.length}</span>
-                  <span className="text-xs text-slate-400 font-medium mt-0.5">Paylaşılan</span>
+                  <span className="text-xl font-bold text-slate-800">
+                    {myItems.length}
+                  </span>
+                  <span className="text-xs text-slate-400 font-medium mt-0.5">
+                    Paylaşılan
+                  </span>
                 </div>
                 <div className="bg-gray-50 rounded-xl p-3 flex flex-col items-center text-center">
                   <Handshake className="w-5 h-5 text-purple-500 mb-1.5" />
-                  <span className="text-xl font-bold text-slate-800">{successfulTradesCount}</span>
-                  <span className="text-xs text-slate-400 font-medium mt-0.5">Takas</span>
+                  <span className="text-xl font-bold text-slate-800">
+                    {successfulTradesCount}
+                  </span>
+                  <span className="text-xs text-slate-400 font-medium mt-0.5">
+                    Takas
+                  </span>
                 </div>
                 <div className="bg-gray-50 rounded-xl p-3 flex flex-col items-center text-center">
                   <Heart className="w-5 h-5 text-rose-500 mb-1.5" />
-                  <span className="text-xl font-bold text-slate-800">{user?.resolvedRequestsCount || 0}</span>
-                  <span className="text-xs text-slate-400 font-medium mt-0.5">İhtiyaç Giderilen</span>
+                  <span className="text-xl font-bold text-slate-800">
+                    {user?.resolvedRequestsCount || 0}
+                  </span>
+                  <span className="text-xs text-slate-400 font-medium mt-0.5">
+                    İhtiyaç Giderilen
+                  </span>
                 </div>
                 <div className="bg-gray-50 rounded-xl p-3 flex flex-col items-center text-center">
                   <Gift className="w-5 h-5 text-emerald-500 mb-1.5" />
-                  <span className="text-xl font-bold text-slate-800">{newOwnerCount}</span>
-                  <span className="text-xs text-slate-400 font-medium mt-0.5">Kazanılan</span>
+                  <span className="text-xl font-bold text-slate-800">
+                    {newOwnerCount}
+                  </span>
+                  <span className="text-xs text-slate-400 font-medium mt-0.5">
+                    Kazanılan
+                  </span>
                 </div>
               </div>
 
@@ -290,10 +362,19 @@ const Dashboard = () => {
                 onClick={() => {
                   const text = `Döngü'de ${myItems.length} eşyayı paylaşıma kattım, ${user?.karmaPoint || 0} İyilik Puanına ulaştım! #Döngü #PaylaşYeniBirHikayeBaşlasın`;
                   if (navigator.share) {
-                    navigator.share({ title: 'Döngü Başarımım', text, url: window.location.origin }).catch(console.error);
+                    navigator
+                      .share({
+                        title: 'Döngü Başarımım',
+                        text,
+                        url: window.location.origin,
+                      })
+                      .catch(console.error);
                   } else {
                     navigator.clipboard.writeText(text);
-                    showToast('Başarımınız panoya kopyalandı! Dilediğiniz yerde paylaşabilirsiniz.', 'success');
+                    showToast(
+                      'Başarımınız panoya kopyalandı! Dilediğiniz yerde paylaşabilirsiniz.',
+                      'success',
+                    );
                   }
                 }}
                 className="w-full px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-800 text-sm font-semibold rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2"
@@ -302,12 +383,9 @@ const Dashboard = () => {
                 Başarımı Paylaş
               </button>
             </div>
-
           </div>
         </div>
-
       </motion.div>
-
 
       {/* Tablos & Action */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -495,6 +573,7 @@ const Dashboard = () => {
                     category={item.category}
                     city={item.city}
                     district={item.district}
+                    postType={item.postType}
                     selectionType={item.selectionType}
                     shareType={item.shareType}
                     deliveryMethods={item.deliveryMethods}

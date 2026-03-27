@@ -28,7 +28,6 @@ import {
 import citiesData from '../data/cities.json';
 import SearchableSelect from '../components/SearchableSelect';
 import FilterPanel from '../components/FilterPanel';
-import CommunitySidebar from '../components/CommunitySidebar';
 
 const Home = () => {
   const [items, setItems] = useState([]);
@@ -385,7 +384,7 @@ const Home = () => {
 
       {/* Vitrin */}
       <main className="w-full px-6 lg:px-12 xl:px-24 2xl:px-32 py-8 sm:py-12">
-        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_280px] gap-8">
+        <div>
           <div>
             <div className="flex flex-col items-center justify-center gap-4 mb-10 text-center">
               <div className="space-y-1.5">
@@ -521,6 +520,7 @@ const Home = () => {
                           category={item.category}
                           city={item.city}
                           district={item.district}
+                          postType={item.postType}
                           selectionType={item.selectionType}
                           shareType={item.shareType}
                           deliveryMethods={item.deliveryMethods}
@@ -537,10 +537,6 @@ const Home = () => {
               </>
             )}
           </div>
-
-          <aside className="hidden xl:block">
-            <CommunitySidebar />
-          </aside>
         </div>
       </main>
 

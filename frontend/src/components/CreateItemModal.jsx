@@ -21,10 +21,12 @@ import SearchableSelect from './SearchableSelect';
 // Zod şeması
 const createItemSchema = z
   .object({
+    postType: z.enum(['OFFERING', 'REQUESTING']),
     title: z.string().min(5, 'Başlık en az 5 karakter olmalı'),
     description: z.string().min(20, 'Açıklama en az 20 karakter olmalı'),
-    city: z.string().min(1, 'Lütfen şehir seçiniz'),
-    district: z.string().min(1, 'Lütfen ilçe seçiniz'),
+    category: z.string().optional(),
+    city: z.string().optional(),
+    district: z.string().optional(),
     neighborhood: z.string().optional(),
     shareType: z.enum(['donation', 'exchange']),
     tradePreferences: z.string().optional(),
@@ -37,6 +39,22 @@ const createItemSchema = z
     communityId: z.string().optional(),
   })
   .superRefine((values, ctx) => {
+    if (!values.city) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['city'],
+        message: 'Lütfen şehir seçiniz',
+      });
+    }
+
+    if (!values.district) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['district'],
+        message: 'Lütfen ilçe seçiniz',
+      });
+    }
+
     if (values.visibilityScope === 'COMMUNITY' && !values.communityId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -47,7 +65,7 @@ const createItemSchema = z
   });
 
 const CreateItemModal = ({ isOpen, onClose, onItemCreated }) => {
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(0);
   const [previews, setPreviews] = useState([]);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [coverIndex, setCoverIndex] = useState(0);
@@ -76,8 +94,8 @@ const CreateItemModal = ({ isOpen, onClose, onItemCreated }) => {
     resolver: zodResolver(createItemSchema),
     defaultValues: {
       postType: 'OFFERING',
-      deliveryMethods: '',
-      selectionType: 'manual', // default manual for exchange, can be overwritten by hook
+      deliveryMethods: 'mutual_agreement',
+      selectionType: 'manual',
       shareType: 'donation',
       tradePreferences: '',
       visibilityScope: 'PUBLIC',
@@ -91,6 +109,12 @@ const CreateItemModal = ({ isOpen, onClose, onItemCreated }) => {
   const shareType = watch('shareType');
   const postType = watch('postType');
   const visibilityScope = watch('visibilityScope');
+  const selectedCommunityId = watch('communityId');
+  const isRequesting = postType === 'REQUESTING';
+  const totalSteps = isRequesting ? 2 : 3;
+  const selectedCommunity = myCommunities.find(
+    (community) => community.id === selectedCommunityId,
+  );
 
   useEffect(() => {
     if (!isOpen) return;
@@ -101,6 +125,17 @@ const CreateItemModal = ({ isOpen, onClose, onItemCreated }) => {
       document.body.style.overflow = previousOverflow;
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (isRequesting) {
+      setValue('shareType', 'donation');
+      setValue('selectionType', 'manual');
+      setValue('deliveryMethods', 'mutual_agreement');
+      setValue('tradePreferences', '');
+    }
+  }, [isOpen, isRequesting, setValue]);
 
   useEffect(() => {
     if (!isOpen || !isAuthenticated) {
@@ -212,6 +247,15 @@ const CreateItemModal = ({ isOpen, onClose, onItemCreated }) => {
   };
 
   const handleBack = () => {
+    if (step === 0) return;
+    if (step === 1) {
+      setStep(0);
+      return;
+    }
+    if (isRequesting && step === 2) {
+      setStep(1);
+      return;
+    }
     if (step > 1) setStep(step - 1);
   };
 
@@ -219,8 +263,32 @@ const CreateItemModal = ({ isOpen, onClose, onItemCreated }) => {
     reset();
     setPreviews([]);
     setSelectedFiles([]);
-    setStep(1);
+    setStep(0);
     setCoverIndex(0);
+  };
+
+  const startOfferingFlow = () => {
+    if (visibilityScope === 'COMMUNITY' && !selectedCommunityId) {
+      showToast('Topluluk seçmeden devam edemezsiniz.', 'info');
+      return;
+    }
+    setValue('postType', 'OFFERING');
+    setValue('shareType', 'donation');
+    setValue('selectionType', 'manual');
+    setValue('deliveryMethods', 'mutual_agreement');
+    setStep(1);
+  };
+
+  const startRequestingFlow = () => {
+    if (visibilityScope === 'COMMUNITY' && !selectedCommunityId) {
+      showToast('Topluluk seçmeden devam edemezsiniz.', 'info');
+      return;
+    }
+    setValue('postType', 'REQUESTING');
+    setValue('shareType', 'donation');
+    setValue('selectionType', 'manual');
+    setValue('deliveryMethods', 'mutual_agreement');
+    setStep(1);
   };
 
   const onSubmit = async (data) => {
@@ -228,11 +296,30 @@ const CreateItemModal = ({ isOpen, onClose, onItemCreated }) => {
 
     try {
       setIsSubmitting(true);
+      const resolvedCity =
+        data.postType === 'REQUESTING' ? data.city : data.city;
+      const resolvedDistrict =
+        data.postType === 'REQUESTING' ? data.district : data.district;
+      const resolvedShareType =
+        data.postType === 'REQUESTING' ? 'donation' : data.shareType;
+      const resolvedSelectionType =
+        data.postType === 'REQUESTING'
+          ? 'manual'
+          : data.shareType === 'exchange'
+            ? 'manual'
+            : data.selectionType;
+      const resolvedDeliveryMethod =
+        data.postType === 'REQUESTING'
+          ? 'mutual_agreement'
+          : data.deliveryMethods;
+
       const formData = new FormData();
+      formData.append('postType', data.postType);
       formData.append('title', data.title);
       formData.append('description', data.description);
-      formData.append('city', data.city);
-      formData.append('district', data.district);
+      formData.append('category', data.category || '');
+      formData.append('city', resolvedCity || '');
+      formData.append('district', resolvedDistrict || '');
       formData.append('neighborhood', data.neighborhood || '');
       if (data.drawDate && data.selectionType !== 'manual') {
         formData.append('drawDate', new Date(data.drawDate).toISOString());
@@ -248,17 +335,13 @@ const CreateItemModal = ({ isOpen, onClose, onItemCreated }) => {
         formData.append('images', file);
       });
 
-      formData.append('deliveryMethods', data.deliveryMethods);
-      formData.append(
-        'selectionType',
-        data.shareType === 'exchange' ? 'manual' : data.selectionType,
-      );
-      formData.append('shareType', data.shareType);
-      formData.append('postType', data.postType);
+      formData.append('deliveryMethods', resolvedDeliveryMethod);
+      formData.append('selectionType', resolvedSelectionType);
+      formData.append('shareType', resolvedShareType);
       if (data.visibilityScope === 'COMMUNITY' && data.communityId) {
         formData.append('communityId', data.communityId);
       }
-      if (data.shareType === 'exchange' && data.tradePreferences) {
+      if (resolvedShareType === 'exchange' && data.tradePreferences) {
         formData.append('tradePreferences', data.tradePreferences);
       }
 
@@ -290,6 +373,19 @@ const CreateItemModal = ({ isOpen, onClose, onItemCreated }) => {
     }
   };
 
+  const stepTitle =
+    step === 0
+      ? 'İlan Türü Seçimi'
+      : step === 1
+        ? isRequesting
+          ? 'Fotoğraf (Opsiyonel)'
+          : 'Görseller & Paylaşım Türü'
+        : step === 2
+          ? isRequesting
+            ? 'İhtiyaç Bilgileri'
+            : 'Eşya Detayları'
+          : 'Seçim & Teslimat';
+
   if (!isOpen) return null;
 
   return (
@@ -308,19 +404,19 @@ const CreateItemModal = ({ isOpen, onClose, onItemCreated }) => {
             <div className="absolute top-0 left-0 w-full h-1 bg-slate-100">
               <div
                 className="h-full bg-emerald-500 transition-all duration-500 ease-out"
-                style={{ width: `${(step / 3) * 100}%` }}
+                style={{
+                  width: `${step === 0 ? 0 : (step / totalSteps) * 100}%`,
+                }}
               />
             </div>
 
             <div className="flex items-center justify-between px-6 py-5">
               <div className="flex flex-col">
                 <h2 className="text-xl font-bold text-slate-800 tracking-tight">
-                  {step === 1 && 'Görseller & Tür'}
-                  {step === 2 && 'Eşya Detayları'}
-                  {step === 3 && 'Döngü Yöntemi & Teslimat'}
+                  {stepTitle}
                 </h2>
                 <p className="text-sm text-slate-500 font-medium">
-                  Adım {step} / 3
+                  {step === 0 ? 'Başlangıç' : `Adım ${step} / ${totalSteps}`}
                 </p>
               </div>
               <button
@@ -334,6 +430,129 @@ const CreateItemModal = ({ isOpen, onClose, onItemCreated }) => {
 
           {/* Scrollable Form Area */}
           <div className="flex-1 overflow-y-auto p-6 scroll-smooth">
+            {step === 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-4"
+              >
+                <p className="text-sm text-slate-500">
+                  İlan türünü ve yayın alanını seçin.
+                </p>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={startOfferingFlow}
+                    className="rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-emerald-300 hover:bg-emerald-50/30"
+                  >
+                    <div className="text-lg font-bold text-slate-900">
+                      Bende Var
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Sahip olduğunuz ürünü paylaşın.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={startRequestingFlow}
+                    className="rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-blue-300 hover:bg-blue-50/30"
+                  >
+                    <div className="text-lg font-bold text-slate-900">
+                      Var mı?
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      İhtiyacınızı hızlıca yayınlayın.
+                    </p>
+                  </button>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Yayın Alanı
+                  </label>
+
+                  <div className="grid gap-3">
+                    <label
+                      className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition ${visibilityScope === 'PUBLIC' ? 'border-slate-900 bg-white' : 'border-slate-200 bg-white'}`}
+                    >
+                      <input
+                        type="radio"
+                        checked={visibilityScope === 'PUBLIC'}
+                        onChange={() => {
+                          setValue('visibilityScope', 'PUBLIC');
+                          setValue('communityId', '');
+                        }}
+                        className="mt-1 h-4 w-4 text-slate-900"
+                      />
+                      <div>
+                        <div className="text-sm font-semibold text-slate-800">
+                          Genel Döngü
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          İlan herkes tarafından görülebilir.
+                        </div>
+                      </div>
+                    </label>
+
+                    <label
+                      className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition ${visibilityScope === 'COMMUNITY' ? 'border-slate-900 bg-white' : 'border-slate-200 bg-white'}`}
+                    >
+                      <input
+                        type="radio"
+                        checked={visibilityScope === 'COMMUNITY'}
+                        onChange={() =>
+                          setValue('visibilityScope', 'COMMUNITY')
+                        }
+                        className="mt-1 h-4 w-4 text-slate-900"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-semibold text-slate-800">
+                          Topluluk
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          İlan sadece seçtiğiniz topluluk üyelerine görünür.
+                        </div>
+                        <select
+                          value={selectedCommunityId || ''}
+                          onChange={(e) =>
+                            setValue('communityId', e.target.value, {
+                              shouldValidate: true,
+                            })
+                          }
+                          disabled={
+                            visibilityScope !== 'COMMUNITY' ||
+                            communitiesLoading ||
+                            myCommunities.length === 0
+                          }
+                          className="mt-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <option value="">
+                            {communitiesLoading
+                              ? 'Topluluklar yükleniyor...'
+                              : myCommunities.length === 0
+                                ? 'Henüz üye olduğun topluluk yok'
+                                : 'Topluluk seçin'}
+                          </option>
+                          {myCommunities.map((community) => (
+                            <option key={community.id} value={community.id}>
+                              {community.name}
+                            </option>
+                          ))}
+                        </select>
+                        {errors.communityId && (
+                          <p className="mt-2 text-xs font-medium text-red-500">
+                            {errors.communityId.message}
+                          </p>
+                        )}
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
             {step === 1 && (
               <motion.div
                 initial={{ opacity: 0, x: 20 }}
@@ -341,81 +560,82 @@ const CreateItemModal = ({ isOpen, onClose, onItemCreated }) => {
                 exit={{ opacity: 0, x: -20 }}
                 className="space-y-6"
               >
-                {/* Var mı / Bende var Switch */}
-                <div className="flex bg-slate-100 p-1 rounded-2xl mb-6 relative z-10 w-full shadow-inner">
-                  <button
-                    type="button"
-                    onClick={() => setValue('postType', 'OFFERING')}
-                    className={`flex-1 py-3.5 text-sm font-bold rounded-xl transition-all duration-300 ${postType === 'OFFERING' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30' : 'text-slate-500 hover:text-slate-700'}`}
-                  >
-                    🙌 Bende Var!
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setValue('postType', 'REQUESTING')}
-                    className={`flex-1 py-3.5 text-sm font-bold rounded-xl transition-all duration-300 ${postType === 'REQUESTING' ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/30' : 'text-slate-500 hover:text-slate-700'}`}
-                  >
-                    🤔 Var mı?
-                  </button>
-                </div>
-
-                {/* Type Selection Header */}
-                <div className="space-y-3 mb-6">
-                  <label className="block text-base font-bold text-slate-800 text-center mb-2">
-                    Paylaşım Türünü Seçin
-                  </label>
-                  <div className="grid grid-cols-2 gap-4">
-                    <label
-                      className={`flex flex-col items-center justify-center p-5 border-2 rounded-[20px] cursor-pointer transition-all ${shareType === 'donation' ? 'border-emerald-500 bg-emerald-50/50 shadow-md ring-4 ring-emerald-500/10' : 'border-slate-200 hover:border-emerald-200 bg-slate-50 hover:bg-white'}`}
-                    >
-                      <input
-                        type="radio"
-                        value="donation"
-                        {...register('shareType')}
-                        className="sr-only"
-                      />
-                      <div className="text-4xl mb-3">🎁</div>
-                      <span className="text-base font-bold text-slate-800">
-                        Döngüye Kat
-                      </span>
-                      <span className="text-xs text-slate-500 font-medium mt-1">
-                        Karşılıksız iyilik yap
-                      </span>
-                    </label>
-                    <label
-                      className={`flex flex-col items-center justify-center p-5 border-2 rounded-[20px] cursor-pointer transition-all ${shareType === 'exchange' ? 'border-emerald-500 bg-emerald-50/50 shadow-md ring-4 ring-emerald-500/10' : 'border-slate-200 hover:border-emerald-200 bg-slate-50 hover:bg-white'}`}
-                    >
-                      <input
-                        type="radio"
-                        value="exchange"
-                        {...register('shareType')}
-                        className="sr-only"
-                      />
-                      <div className="text-4xl mb-3">🔄</div>
-                      <span className="text-base font-bold text-slate-800">
-                        Takaslık
-                      </span>
-                      <span className="text-xs text-slate-500 font-medium mt-1">
-                        Eşyaları değiştir
-                      </span>
-                    </label>
+                {visibilityScope === 'COMMUNITY' && selectedCommunity && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    Topluluk:{' '}
+                    <span className="font-semibold">
+                      {selectedCommunity.name}
+                    </span>
                   </div>
-                </div>
+                )}
 
-                <hr className="border-slate-100" />
+                {!isRequesting && (
+                  <>
+                    {/* Type Selection Header */}
+                    <div className="space-y-3 mb-6">
+                      <label className="block text-base font-bold text-slate-800 text-center mb-2">
+                        Paylaşım Türünü Seçin
+                      </label>
+                      <div className="grid grid-cols-2 gap-4">
+                        <label
+                          className={`flex flex-col items-center justify-center p-5 border-2 rounded-[20px] cursor-pointer transition-all ${shareType === 'donation' ? 'border-emerald-500 bg-emerald-50/50 shadow-md ring-4 ring-emerald-500/10' : 'border-slate-200 hover:border-emerald-200 bg-slate-50 hover:bg-white'}`}
+                        >
+                          <input
+                            type="radio"
+                            value="donation"
+                            {...register('shareType')}
+                            className="sr-only"
+                          />
+                          <div className="text-4xl mb-3">🎁</div>
+                          <span className="text-base font-bold text-slate-800">
+                            Döngüye Kat
+                          </span>
+                          <span className="text-xs text-slate-500 font-medium mt-1">
+                            Karşılıksız iyilik yap
+                          </span>
+                        </label>
+                        <label
+                          className={`flex flex-col items-center justify-center p-5 border-2 rounded-[20px] cursor-pointer transition-all ${shareType === 'exchange' ? 'border-emerald-500 bg-emerald-50/50 shadow-md ring-4 ring-emerald-500/10' : 'border-slate-200 hover:border-emerald-200 bg-slate-50 hover:bg-white'}`}
+                        >
+                          <input
+                            type="radio"
+                            value="exchange"
+                            {...register('shareType')}
+                            className="sr-only"
+                          />
+                          <div className="text-4xl mb-3">🔄</div>
+                          <span className="text-base font-bold text-slate-800">
+                            Takaslık
+                          </span>
+                          <span className="text-xs text-slate-500 font-medium mt-1">
+                            Eşyaları değiştir
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <hr className="border-slate-100" />
+                  </>
+                )}
+
+                {isRequesting && (
+                  <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                    İhtiyaç ilanı için il ve ilçe seçimi zorunludur.
+                  </div>
+                )}
 
                 <div>
                   <h3 className="text-lg font-semibold text-slate-800 mb-1">
                     Eşya Görselleri{' '}
-                    {postType === 'REQUESTING' && (
+                    {isRequesting && (
                       <span className="text-sm text-slate-400 font-normal">
                         (İsteğe Bağlı)
                       </span>
                     )}
                   </h3>
                   <p className="text-sm text-slate-500 mb-4">
-                    {postType === 'REQUESTING'
-                      ? 'Aradığınız eşyayı tarif eden örnek bir resim yükleyebilirsiniz.'
+                    {isRequesting
+                      ? 'Aradığın eşyayı anlatan örnek görsel ekleyebilirsin.'
                       : 'Eşyayı en iyi anlatan net fotoğraflar yükleyin. İlk fotoğraf kapak olacaktır.'}
                   </p>
 
@@ -498,14 +718,34 @@ const CreateItemModal = ({ isOpen, onClose, onItemCreated }) => {
                 exit={{ opacity: 0, x: -20 }}
                 className="space-y-5"
               >
+                {isRequesting && (
+                  <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                    Bu akışta paylaşım türü, seçim yöntemi ve teslimat tipi
+                    otomatik ayarlanır.
+                  </div>
+                )}
+
+                {visibilityScope === 'COMMUNITY' && selectedCommunity && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    Topluluk:{' '}
+                    <span className="font-semibold">
+                      {selectedCommunity.name}
+                    </span>
+                  </div>
+                )}
+
                 <div className="space-y-1.5">
                   <label className="block text-sm font-semibold text-slate-700">
-                    Başlık
+                    {isRequesting ? 'Ne Arıyorsun?' : 'Başlık'}
                   </label>
                   <input
                     {...register('title')}
                     type="text"
-                    placeholder="Örn: Az kullanılmış Bisiklet"
+                    placeholder={
+                      isRequesting
+                        ? 'Örn: Çocuk çalışma masası arıyorum'
+                        : 'Örn: Az kullanılmış Bisiklet'
+                    }
                     className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium text-slate-800 placeholder:font-normal"
                   />
                   {errors.title && (
@@ -515,27 +755,29 @@ const CreateItemModal = ({ isOpen, onClose, onItemCreated }) => {
                   )}
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="block text-sm font-semibold text-slate-700">
-                    Kategori
-                  </label>
-                  <select
-                    {...register('category')}
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-slate-800 bg-white"
-                  >
-                    <option value="Diğer">
-                      Kategori Seçiniz (İsteğe bağlı)
-                    </option>
-                    <option value="Elektronik">Elektronik</option>
-                    <option value="Giyim">Giyim</option>
-                    <option value="Kitap">Kitap</option>
-                    <option value="Ev Eşyası">Ev Eşyası</option>
-                    <option value="Hobi">Hobi</option>
-                    <option value="Diğer">Diğer</option>
-                  </select>
-                </div>
+                {!isRequesting && (
+                  <div className="space-y-1.5">
+                    <label className="block text-sm font-semibold text-slate-700">
+                      Kategori
+                    </label>
+                    <select
+                      {...register('category')}
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-slate-800 bg-white"
+                    >
+                      <option value="Diğer">
+                        Kategori Seçiniz (İsteğe bağlı)
+                      </option>
+                      <option value="Elektronik">Elektronik</option>
+                      <option value="Giyim">Giyim</option>
+                      <option value="Kitap">Kitap</option>
+                      <option value="Ev Eşyası">Ev Eşyası</option>
+                      <option value="Hobi">Hobi</option>
+                      <option value="Diğer">Diğer</option>
+                    </select>
+                  </div>
+                )}
 
-                {shareType === 'exchange' && (
+                {!isRequesting && shareType === 'exchange' && (
                   <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
@@ -560,7 +802,11 @@ const CreateItemModal = ({ isOpen, onClose, onItemCreated }) => {
                   <textarea
                     {...register('description')}
                     rows={4}
-                    placeholder="Eşyanın hikayesi, kullanım süresi veya neden yeni sahibini aradığı hakkında samimi bir dille bilgi verin..."
+                    placeholder={
+                      isRequesting
+                        ? 'Neye ihtiyacın olduğunu ve neden aradığını kısaca anlat...'
+                        : 'Eşyanın hikayesi, kullanım süresi veya neden yeni sahibini aradığı hakkında samimi bir dille bilgi verin...'
+                    }
                     className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all resize-none text-slate-800 leading-relaxed font-medium"
                   />
                   {errors.description && (
@@ -570,77 +816,82 @@ const CreateItemModal = ({ isOpen, onClose, onItemCreated }) => {
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5 relative z-50">
-                    <label className="block text-sm font-semibold text-slate-700">
-                      Şehir
-                    </label>
-                    <Controller
-                      name="city"
-                      control={control}
-                      render={({ field }) => (
-                        <SearchableSelect
-                          options={cities}
-                          value={field.value}
-                          onChange={(val) => {
-                            field.onChange(val);
-                            setValue('district', '');
-                          }}
-                          placeholder="Seçiniz"
-                        />
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5 relative z-50">
+                      <label className="block text-sm font-semibold text-slate-700">
+                        İl
+                      </label>
+                      <Controller
+                        name="city"
+                        control={control}
+                        render={({ field }) => (
+                          <SearchableSelect
+                            options={cities}
+                            value={field.value}
+                            onChange={(val) => {
+                              field.onChange(val);
+                              setValue('district', '');
+                            }}
+                            placeholder="İl seçiniz"
+                          />
+                        )}
+                      />
+                      {errors.city && (
+                        <p className="text-xs text-red-500 font-medium">
+                          {errors.city.message}
+                        </p>
                       )}
-                    />
-                    {errors.city && (
-                      <p className="text-xs text-red-500 font-medium">
-                        {errors.city.message}
-                      </p>
-                    )}
+                    </div>
+
+                    <div className="space-y-1.5 relative z-40">
+                      <label className="block text-sm font-semibold text-slate-700">
+                        İlçe
+                      </label>
+                      <Controller
+                        name="district"
+                        control={control}
+                        render={({ field }) => (
+                          <SearchableSelect
+                            options={
+                              selectedCity ? districtsData[selectedCity] : []
+                            }
+                            value={field.value}
+                            onChange={field.onChange}
+                            placeholder="İlçe seçiniz"
+                            disabled={!selectedCity}
+                          />
+                        )}
+                      />
+                      {errors.district && (
+                        <p className="text-xs text-red-500 font-medium">
+                          {errors.district.message}
+                        </p>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="space-y-1.5 relative z-40">
-                    <label className="block text-sm font-semibold text-slate-700">
-                      İlçe
-                    </label>
-                    <Controller
-                      name="district"
-                      control={control}
-                      render={({ field }) => (
-                        <SearchableSelect
-                          options={
-                            selectedCity ? districtsData[selectedCity] : []
-                          }
-                          value={field.value}
-                          onChange={field.onChange}
-                          placeholder="Seçiniz"
-                          disabled={!selectedCity}
-                        />
-                      )}
-                    />
-                    {errors.district && (
-                      <p className="text-xs text-red-500 font-medium">
-                        {errors.district.message}
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="block text-sm font-semibold text-slate-700">
-                    Mahalle{' '}
-                    <span className="text-slate-400 font-normal text-xs">
-                      (İsteğe Bağlı)
-                    </span>
-                  </label>
-                  <input
-                    {...register('neighborhood')}
-                    type="text"
-                    placeholder="Örn: Merkez Mah."
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-slate-800"
-                  />
-                </div>
+                  {!isRequesting && (
+                    <div className="space-y-1.5">
+                      <label className="block text-sm font-semibold text-slate-700">
+                        Mahalle{' '}
+                        <span className="text-slate-400 font-normal text-xs">
+                          (İsteğe Bağlı)
+                        </span>
+                      </label>
+                      <input
+                        {...register('neighborhood')}
+                        type="text"
+                        placeholder="Örn: Merkez Mah."
+                        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-slate-800"
+                      />
+                    </div>
+                  )}
+                </>
               </motion.div>
             )}
 
-            {step === 3 && (
+            {step === 3 && !isRequesting && (
               <motion.div
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -650,88 +901,13 @@ const CreateItemModal = ({ isOpen, onClose, onItemCreated }) => {
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
                   <div className="flex items-center gap-2 text-slate-900">
                     <ShieldCheck className="h-4 w-4 text-emerald-600" />
-                    <h3 className="text-sm font-semibold">
-                      Nerede Paylaşılsın?
-                    </h3>
+                    <h3 className="text-sm font-semibold">Görünürlük</h3>
                   </div>
                   <p className="mt-1 text-xs leading-5 text-slate-500">
-                    Genel Döngü tüm kullanıcılara açıktır. Topluluk içi paylaşım
-                    ise sadece üyelerin görebileceği güvenli alanda yayınlanır.
+                    {visibilityScope === 'COMMUNITY' && selectedCommunity
+                      ? `Bu ilan sadece ${selectedCommunity.name} üyelerine gösterilir.`
+                      : 'Bu ilan genel vitrinde herkese gösterilir.'}
                   </p>
-
-                  <div className="mt-4 grid gap-3">
-                    <label
-                      className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition ${visibilityScope === 'PUBLIC' ? 'border-slate-900 bg-white' : 'border-slate-200 bg-white'}`}
-                    >
-                      <input
-                        type="radio"
-                        value="PUBLIC"
-                        {...register('visibilityScope')}
-                        onChange={() => {
-                          setValue('visibilityScope', 'PUBLIC');
-                          setValue('communityId', '');
-                        }}
-                        className="mt-1 h-4 w-4 text-slate-900"
-                      />
-                      <div>
-                        <div className="text-sm font-semibold text-slate-800">
-                          Genel Döngü (Herkes)
-                        </div>
-                        <div className="mt-1 text-xs text-slate-500">
-                          Paylaşım tüm vitrinde görünür.
-                        </div>
-                      </div>
-                    </label>
-
-                    <label
-                      className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition ${visibilityScope === 'COMMUNITY' ? 'border-slate-900 bg-white' : 'border-slate-200 bg-white'}`}
-                    >
-                      <input
-                        type="radio"
-                        value="COMMUNITY"
-                        {...register('visibilityScope')}
-                        onChange={() =>
-                          setValue('visibilityScope', 'COMMUNITY')
-                        }
-                        className="mt-1 h-4 w-4 text-slate-900"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-semibold text-slate-800">
-                          Üye Olduğun Topluluklar
-                        </div>
-                        <div className="mt-1 text-xs text-slate-500">
-                          İlan sadece seçtiğin topluluk üyelerine görünür.
-                        </div>
-                        <select
-                          {...register('communityId')}
-                          disabled={
-                            visibilityScope !== 'COMMUNITY' ||
-                            communitiesLoading ||
-                            myCommunities.length === 0
-                          }
-                          className="mt-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          <option value="">
-                            {communitiesLoading
-                              ? 'Topluluklar yükleniyor...'
-                              : myCommunities.length === 0
-                                ? 'Henüz üye olduğun topluluk yok'
-                                : 'Topluluk seçin'}
-                          </option>
-                          {myCommunities.map((community) => (
-                            <option key={community.id} value={community.id}>
-                              {community.name}
-                            </option>
-                          ))}
-                        </select>
-                        {errors.communityId && (
-                          <p className="mt-2 text-xs font-medium text-red-500">
-                            {errors.communityId.message}
-                          </p>
-                        )}
-                      </div>
-                    </label>
-                  </div>
                 </div>
 
                 {shareType === 'donation' && (
@@ -883,7 +1059,7 @@ const CreateItemModal = ({ isOpen, onClose, onItemCreated }) => {
 
           {/* Footer Actions */}
           <div className="flex items-center justify-between p-6 border-t border-slate-100 bg-slate-50/50 flex-shrink-0">
-            {step > 1 ? (
+            {step > 0 ? (
               <button
                 type="button"
                 onClick={handleBack}
@@ -895,7 +1071,11 @@ const CreateItemModal = ({ isOpen, onClose, onItemCreated }) => {
               <div /> // Spacer if no back button
             )}
 
-            {step < 3 ? (
+            {step === 0 ? (
+              <div className="text-xs font-medium text-slate-500">
+                Bir ilan akışı seçerek devam et.
+              </div>
+            ) : step < totalSteps ? (
               <button
                 type="button"
                 onClick={handleNext}
@@ -908,7 +1088,7 @@ const CreateItemModal = ({ isOpen, onClose, onItemCreated }) => {
                 type="button"
                 onClick={handleSubmit(onSubmit)}
                 disabled={isSubmitting}
-                className="px-8 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-bold rounded-xl transition-all shadow-md shadow-emerald-600/20 hover:shadow-lg flex items-center gap-2 active:scale-95"
+                className={`px-8 py-3 text-white font-bold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center gap-2 active:scale-95 ${isRequesting ? 'bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400' : 'bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 shadow-emerald-600/20'}`}
               >
                 {isSubmitting ? (
                   <>
@@ -916,7 +1096,8 @@ const CreateItemModal = ({ isOpen, onClose, onItemCreated }) => {
                   </>
                 ) : (
                   <>
-                    <CheckCircle2 className="w-5 h-5" /> Döngüyü Başlat
+                    <CheckCircle2 className="w-5 h-5" />{' '}
+                    {isRequesting ? 'Var mı?' : 'Döngüyü Başlat'}
                   </>
                 )}
               </button>

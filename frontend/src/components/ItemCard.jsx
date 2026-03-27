@@ -41,7 +41,7 @@ export const ItemCard = ({
       whileHover={{ y: -5 }}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`group relative bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 h-full flex flex-col ${postType === 'REQUESTING' ? 'border-2 border-blue-400 shadow-[0_4px_16px_rgba(59,130,246,0.3)]' : 'border border-slate-100'}`}
+      className={`group relative rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 h-full flex flex-col ${postType === 'REQUESTING' ? 'bg-blue-50/40 border border-blue-200 shadow-[0_4px_16px_rgba(59,130,246,0.2)]' : 'bg-white border border-slate-100'}`}
     >
       {/* Image Container */}
       <div className="relative h-64 aspect-[4/3] overflow-hidden bg-slate-100">
@@ -75,23 +75,24 @@ export const ItemCard = ({
         <div className="absolute top-4 left-0 w-full px-4 flex justify-between items-start z-30 pointer-events-none">
           {/* Left Badges */}
           <div className="flex flex-col gap-2 items-start pointer-events-auto">
-            {/* Requesting Badge */}
             {postType === 'REQUESTING' && (
-              <div className="bg-blue-600/95 backdrop-blur-sm px-3.5 py-1.5 rounded-full text-xs font-black text-white shadow-xl flex items-center gap-1 border border-blue-400">
-                <span className="text-sm animate-pulse-slow">🎯</span> ARANIYOR
+              <div className="bg-blue-600 px-3.5 py-1.5 rounded-full text-xs font-black text-white shadow-sm border border-blue-500 tracking-wide">
+                VAR MI
               </div>
             )}
 
             {/* Selection Type Badge */}
-            {selectionType && shareType !== 'exchange' && (
-              <div
-                className={`bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-bold shadow-sm flex items-center gap-1 ${selectionType === 'manual' ? 'text-violet-700' : 'text-purple-700'}`}
-              >
-                <span>
-                  {selectionType === 'manual' ? '👆 Döngüde' : '🎲 Çekiliş'}
-                </span>
-              </div>
-            )}
+            {selectionType &&
+              shareType !== 'exchange' &&
+              postType !== 'REQUESTING' && (
+                <div
+                  className={`bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-bold shadow-sm flex items-center gap-1 ${selectionType === 'manual' ? 'text-violet-700' : 'text-purple-700'}`}
+                >
+                  <span>
+                    {selectionType === 'manual' ? '👆 Döngüde' : '🎲 Çekiliş'}
+                  </span>
+                </div>
+              )}
 
             {/* Trade Badge */}
             {shareType === 'exchange' && (
@@ -112,7 +113,7 @@ export const ItemCard = ({
           </div>
 
           {/* Right Badges */}
-          <div className="pointer-events-auto">
+          <div className="pointer-events-auto flex flex-col items-end gap-2">
             {/* Favorite (Heart) Button */}
             <button
               onClick={(e) => {
@@ -138,9 +139,17 @@ export const ItemCard = ({
 
         {/* Location Badge */}
         {(city || district) && (
-          <div className="absolute bottom-4 right-4 bg-white/90 backdrop-blur-sm px-2.5 py-1 rounded-full text-[11px] font-bold text-slate-700 flex items-center gap-1 shadow-sm">
-            <MapPin className="w-3 h-3 text-emerald-600" />
-            <span>{district ? `${district}, ${city}` : city}</span>
+          <div
+            className={`absolute bottom-4 right-4 backdrop-blur-sm px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1 shadow-sm ${postType === 'REQUESTING' ? 'bg-blue-50/95 text-blue-700 border border-blue-200' : 'bg-white/90 text-slate-700'}`}
+          >
+            <MapPin
+              className={`w-3 h-3 ${postType === 'REQUESTING' ? 'text-blue-600' : 'text-emerald-600'}`}
+            />
+            <span>
+              {city && district
+                ? `${city} / ${district}`
+                : district || city || 'Konum belirtilmedi'}
+            </span>
           </div>
         )}
 
@@ -218,10 +227,18 @@ export const ItemCard = ({
           </div>
         )}
 
-        {/* Hover detail link */}
-        <p className="mt-auto pt-3 text-xs text-slate-400 group-hover:text-emerald-600 transition-colors font-medium text-right">
-          Detayları İncele →
-        </p>
+        {/* Card CTA */}
+        {postType === 'REQUESTING' ? (
+          <div className="mt-auto pt-3 text-right">
+            <span className="inline-flex items-center rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white">
+              Bende Var!
+            </span>
+          </div>
+        ) : (
+          <p className="mt-auto pt-3 text-xs text-slate-400 group-hover:text-emerald-600 transition-colors font-medium text-right">
+            Detayları İncele →
+          </p>
+        )}
       </div>
     </motion.div>
   );

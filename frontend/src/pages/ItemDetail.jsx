@@ -55,6 +55,7 @@ const ItemDetail = () => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [requestConfirmOpen, setRequestConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [publicOffers, setPublicOffers] = useState([]);
   const [loadingOffers, setLoadingOffers] = useState(false);
@@ -150,20 +151,16 @@ const ItemDetail = () => {
       navigate('/login');
       return;
     }
-    setJoining(true); // Re-use the joining state for loading
-    try {
-      const payload = {
-        content: `Selam, aradığın ${item.title} bende var, sana ulaştırmak isterim!`,
-        targetUserId: item.owner.id
-      };
-      await api.post(`/messages/${item.id}`, payload);
-      showToast('Mesajınız başarıyla gönderildi!', 'success');
-      navigate(`/chat?partnerId=${item.owner.id}&partnerName=${encodeURIComponent(item.owner.fullName)}&itemId=${item.id}&itemTitle=${encodeURIComponent(item.title)}`);
-    } catch (err) {
-      showToast(err.response?.data?.message || 'Mesaj gönderilemedi.', 'error');
-    } finally {
-      setJoining(false);
-    }
+
+    setRequestConfirmOpen(true);
+  };
+
+  const confirmStartRequestChat = () => {
+    setRequestConfirmOpen(false);
+
+    navigate(
+      `/chat?partnerId=${item.owner.id}&partnerName=${encodeURIComponent(item.owner.fullName)}&itemId=${item.id}&itemTitle=${encodeURIComponent(item.title)}`,
+    );
   };
 
   const handleFavoriteToggle = async () => {
@@ -258,7 +255,12 @@ const ItemDetail = () => {
   const timeAgoStr = item.drawDate
     ? formatDistanceToNow(new Date(item.drawDate), { locale: tr })
     : '';
-  const postedAgoStr = item.createdAt ? formatDistanceToNow(new Date(item.createdAt), { locale: tr, addSuffix: true }) : '';
+  const postedAgoStr = item.createdAt
+    ? formatDistanceToNow(new Date(item.createdAt), {
+        locale: tr,
+        addSuffix: true,
+      })
+    : '';
 
   const isOwner = user?.id === item.owner?.id;
   const isWinner = user?.id === item.winner?.id;
@@ -270,7 +272,7 @@ const ItemDetail = () => {
           item.postType === 'REQUESTING'
             ? 'https://placehold.co/800x600/EFF6FF/2563EB?text=📸+Görsel+Bulunmuyor\nBu+ilan+bir+ihtiyaç+talebiveya+aranıyor+ilanıdır.&font=Outfit'
             : item.imageUrl ||
-            'https://via.placeholder.com/800x600?text=Gorsel+Yok',
+              'https://via.placeholder.com/800x600?text=Gorsel+Yok',
         ];
   const activeImage = itemImages[currentImageIndex] || itemImages[0];
   const tradeOfferCount = publicOffers.length;
@@ -380,7 +382,11 @@ const ItemDetail = () => {
                   Eşyayı Teslim Aldım
                 </button>
                 <button
-                  onClick={() => navigate(`/chat?partnerId=${item.owner.id}&partnerName=${encodeURIComponent(item.owner.fullName)}&itemId=${item.id}&itemTitle=${encodeURIComponent(item.title)}`)}
+                  onClick={() =>
+                    navigate(
+                      `/chat?partnerId=${item.owner.id}&partnerName=${encodeURIComponent(item.owner.fullName)}&itemId=${item.id}&itemTitle=${encodeURIComponent(item.title)}`,
+                    )
+                  }
                   className="px-6 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-[14px] shadow-lg shadow-emerald-600/20 transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2 whitespace-nowrap"
                 >
                   <MessageCircle className="w-5 h-5" />
@@ -427,7 +433,11 @@ const ItemDetail = () => {
                   </button>
                 )}
                 <button
-                  onClick={() => navigate(`/chat?partnerId=${item.winner.id}&partnerName=${encodeURIComponent(item.winner.fullName)}&itemId=${item.id}&itemTitle=${encodeURIComponent(item.title)}`)}
+                  onClick={() =>
+                    navigate(
+                      `/chat?partnerId=${item.winner.id}&partnerName=${encodeURIComponent(item.winner.fullName)}&itemId=${item.id}&itemTitle=${encodeURIComponent(item.title)}`,
+                    )
+                  }
                   className="px-6 py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-[14px] shadow-lg shadow-blue-600/20 transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-2 whitespace-nowrap"
                 >
                   <MessageCircle className="w-5 h-5" />
@@ -604,6 +614,7 @@ const ItemDetail = () => {
           {/* Katılımcı Yönetim Paneli — ilan sahibi için */}
           {isOwner &&
             item.shareType !== 'exchange' &&
+            item.postType !== 'REQUESTING' &&
             (item.status === 'AVAILABLE' || item.status === 'DRAW_PENDING') && (
               <div
                 className="mt-4 pt-8 border-t border-slate-100"
@@ -623,7 +634,9 @@ const ItemDetail = () => {
                       'success',
                     );
                     setTimeout(() => {
-                      navigate(`/chat?partnerId=${winner.id}&partnerName=${encodeURIComponent(winner.fullName)}&itemId=${item.id}&itemTitle=${encodeURIComponent(item.title)}`);
+                      navigate(
+                        `/chat?partnerId=${winner.id}&partnerName=${encodeURIComponent(winner.fullName)}&itemId=${item.id}&itemTitle=${encodeURIComponent(item.title)}`,
+                      );
                     }, 800);
                   }}
                 />
@@ -676,7 +689,8 @@ const ItemDetail = () => {
               </span>
               {postedAgoStr && (
                 <span className="flex items-center gap-1.5 text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100">
-                  <Clock className="w-4 h-4 text-slate-400" /> {postedAgoStr} paylaşıldı
+                  <Clock className="w-4 h-4 text-slate-400" /> {postedAgoStr}{' '}
+                  paylaşıldı
                 </span>
               )}
             </div>
@@ -690,8 +704,7 @@ const ItemDetail = () => {
                 </div>
                 <div className="relative">
                   <p className="text-[14px] text-blue-900 font-bold leading-snug tracking-tight">
-                    Bu ihtiyacı gidererek <br className="sm:hidden" />
-                    <span className="bg-blue-100 px-1 py-0.5 rounded text-blue-700 font-black">200 İyilik Puanı</span> kazanabilirsin!
+                    Bu ihtiyacı gidererek 200 İyilik Puanı kazanabilirsin!
                   </p>
                 </div>
               </div>
@@ -760,50 +773,51 @@ const ItemDetail = () => {
             )}
 
             {/* Stats Info Grid (Apple Minimal) */}
-            {item.shareType !== 'exchange' && (
-              <div className="grid grid-cols-2 gap-y-7 gap-x-4 mb-8">
-                {item.selectionType !== 'manual' && timeLeft && !isEnded && (
-                  <div>
-                    <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mb-1.5">
-                      Kalan Süre
-                    </p>
-                    <p className="text-xl font-black text-emerald-600 tabular-nums tracking-tight">
-                      {timeLeft}
-                    </p>
-                  </div>
-                )}
-                {isEnded && (
-                  <div>
-                    <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mb-1.5">
-                      Durum
-                    </p>
-                    <p className="text-base font-black text-slate-800">
-                      {timeAgoStr} bitti
-                    </p>
-                  </div>
-                )}
-                {item.selectionType === 'manual' && !isEnded && (
-                  <div>
-                    <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mb-1.5">
-                      Seçim Türü
-                    </p>
-                    <p className="text-base font-black text-violet-600 flex items-center gap-1.5">
-                      ✋ Manuel
-                    </p>
-                  </div>
-                )}
+            {item.shareType !== 'exchange' &&
+              item.postType !== 'REQUESTING' && (
+                <div className="grid grid-cols-2 gap-y-7 gap-x-4 mb-8">
+                  {item.selectionType !== 'manual' && timeLeft && !isEnded && (
+                    <div>
+                      <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mb-1.5">
+                        Kalan Süre
+                      </p>
+                      <p className="text-xl font-black text-emerald-600 tabular-nums tracking-tight">
+                        {timeLeft}
+                      </p>
+                    </div>
+                  )}
+                  {isEnded && (
+                    <div>
+                      <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mb-1.5">
+                        Durum
+                      </p>
+                      <p className="text-base font-black text-slate-800">
+                        {timeAgoStr} bitti
+                      </p>
+                    </div>
+                  )}
+                  {item.selectionType === 'manual' && !isEnded && (
+                    <div>
+                      <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mb-1.5">
+                        Seçim Türü
+                      </p>
+                      <p className="text-base font-black text-violet-600 flex items-center gap-1.5">
+                        ✋ Manuel
+                      </p>
+                    </div>
+                  )}
 
-                <div>
-                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mb-1.5">
-                    Aday Sayısı
-                  </p>
-                  <p className="text-xl font-black text-slate-800 flex items-center gap-1.5 tabular-nums tracking-tight">
-                    <Users className="w-5 h-5 text-emerald-500" />
-                    {participants}
-                  </p>
+                  <div>
+                    <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest mb-1.5">
+                      Aday Sayısı
+                    </p>
+                    <p className="text-xl font-black text-slate-800 flex items-center gap-1.5 tabular-nums tracking-tight">
+                      <Users className="w-5 h-5 text-emerald-500" />
+                      {participants}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
             {item.shareType === 'exchange' && (
               <div className="mb-8">
@@ -879,7 +893,11 @@ const ItemDetail = () => {
 
                     {canChat && (
                       <button
-                        onClick={() => navigate(`/chat?partnerId=${item.owner.id}&partnerName=${encodeURIComponent(item.owner.fullName)}&itemId=${item.id}&itemTitle=${encodeURIComponent(item.title)}`)}
+                        onClick={() =>
+                          navigate(
+                            `/chat?partnerId=${item.owner.id}&partnerName=${encodeURIComponent(item.owner.fullName)}&itemId=${item.id}&itemTitle=${encodeURIComponent(item.title)}`,
+                          )
+                        }
                         className="w-full py-4 border-2 border-slate-100 hover:border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-[15px] rounded-[14px] transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
                       >
                         <MessageCircle className="w-5 h-5" />
@@ -901,7 +919,11 @@ const ItemDetail = () => {
                     )}
                     {canChat && (
                       <button
-                        onClick={() => navigate(`/chat?partnerId=${item.owner.id}&partnerName=${encodeURIComponent(item.owner.fullName)}&itemId=${item.id}&itemTitle=${encodeURIComponent(item.title)}`)}
+                        onClick={() =>
+                          navigate(
+                            `/chat?partnerId=${item.owner.id}&partnerName=${encodeURIComponent(item.owner.fullName)}&itemId=${item.id}&itemTitle=${encodeURIComponent(item.title)}`,
+                          )
+                        }
                         className="w-full py-3.5 text-slate-500 hover:text-slate-800 font-bold text-sm transition-colors flex items-center justify-center gap-2"
                       >
                         <MessageCircle className="w-4 h-4" />
@@ -1080,6 +1102,52 @@ const ItemDetail = () => {
                   className="px-6 py-3.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-2xl shadow-lg shadow-red-600/20 transition-all flex items-center justify-center gap-2"
                 >
                   {deleting ? 'Siliniyor...' : 'Evet, Sil'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Request Confirmation Modal */}
+      <AnimatePresence>
+        {requestConfirmOpen && (
+          <div className="fixed inset-0 z-[115] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setRequestConfirmOpen(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl relative z-10 border border-slate-100"
+            >
+              <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center text-blue-600 mb-6 mx-auto">
+                <MessageCircle className="w-8 h-8" />
+              </div>
+              <h3 className="text-2xl font-bold text-slate-900 text-center mb-2 font-[Outfit]">
+                Sohbet Başlatılsın mı?
+              </h3>
+              <p className="text-slate-500 text-center mb-8 font-medium leading-relaxed">
+                Bu ihtiyacı karşılayabileceğinizi belirterek ilan sahibiyle
+                doğrudan sohbet başlatacaksınız.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  onClick={() => setRequestConfirmOpen(false)}
+                  className="px-6 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl transition-all"
+                >
+                  Vazgeç
+                </button>
+                <button
+                  onClick={confirmStartRequestChat}
+                  className="px-6 py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl shadow-lg shadow-blue-600/20 transition-all"
+                >
+                  Sohbeti Başlat
                 </button>
               </div>
             </motion.div>
